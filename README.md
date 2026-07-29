@@ -1,11 +1,42 @@
-<div align="center">
+# شاشتي TV (Shashaty TV V3.0) 🎬
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+مركز الترفيه العائلي والسينما المنزلية للتحكم بالملفات والمكتبات المرئية المحلية بتصميم زجاجي عصري ودعم الأوضاع المختلفة.
 
-  <h1>Built with AI Studio</h2>
+## 🌟 المميزات
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+- 📺 **إدارة القنوات والبث:** تحكم في القنوات وتعيين قوائم المشاهدة التلقائية.
+- 🍿 **جلسات المشاهدة الذكية:** إنشاء وتتبع جلسات العرض للعائلة والأطفال.
+- 🎨 **تصميم Glassmorphism راقي:** دعم كامل للغة العربية (RTL) مع مظاهر ملونة ودعم الوضع الخفيف/الداكن.
+- 🛡️ **نظام فحص جودة التطبيق (QA Inspection):** أداة متكاملة لفحص سلامة الملفات والمراجع وإنشاء الأغلفة تلقائيًا.
+- ⚡ **دعم منصة Tauri & Web:** إمكانية التشغيل على سطح المكتب أو كمنصة ويب.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 🛠️ التقنيات المستخدمة
 
-</div>
+- **React 19** + **TypeScript**
+- **Vite 6**
+- **Tailwind CSS v4**
+- **Motion (Framer Motion)**
+- **Lucide Icons**
+- **IndexedDB (idb-keyval)**
+
+## 🚀 كيفية التشغيل والتطوير
+
+1. **تثبيت الحزم:**
+```bash
+npm install
+```
+
+2. **تشغيل خادم التطوير:**
+```bash
+npm run dev
+```
+
+3. **بناء المشروع للإنتاج:**
+```bash
+npm run build
+```
+
+4. **فحص أنواع TypeScript:**
+```bash
+npm run lint
+```
