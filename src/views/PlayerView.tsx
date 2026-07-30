@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, Pause, SkipBack, SkipForward, ArrowRight, Volume2, VolumeX, Maximize, Minimize, List, RotateCw, X, Film, Check, Sparkles, CheckCircle2, BookOpen, Music, Star, Globe, Radio, Sliders, PictureInPicture, Sun, Settings, ChevronsLeft, ChevronsRight, Tv, Bell, BellOff } from 'lucide-react';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Mode, Channel, Watchlist, WeeklyScheduleEntry } from '../types';
-import { getEpisodeInspiredCover, extractVideoFrameThumbnail } from '../utils/coverHelper';
+import { Mode, Channel, Watchlist, WeeklyScheduleEntry, ModeConfig } from '../types';
+import { MODES } from '../data';
+import { getEpisodeInspiredCover, extractVideoFrameThumbnail, THEMATIC_IMAGES } from '../utils/coverHelper';
 import { getChannelNowPlaying } from '../utils/channelEngine';
 
 const MODE_NAMES: Record<string, string> = {
@@ -62,6 +63,8 @@ const MODE_GLOW_COLORS: Record<string, { ring: string; shadow: string; bgGradien
 
 interface PlayerViewProps {
   onExit: () => void;
+  onRestoreView?: () => void;
+  onPipStateChange?: (active: boolean) => void;
   file?: any;
   title?: string;
   watchlistTitle?: string;
@@ -69,16 +72,21 @@ interface PlayerViewProps {
   initialIndex?: number;
   initialTime?: number;
   currentMode?: Mode;
+  customModes?: Record<Mode, ModeConfig>;
   onProgressUpdate?: (index: number, currentTime?: number) => void;
   channels?: Channel[];
   currentChannelId?: string;
   watchlists?: Watchlist[];
   schedules?: WeeklyScheduleEntry[];
   onPlayChannel?: (channel: Channel) => void;
+  isFloating?: boolean;
+  onToggleFloating?: (floating: boolean) => void;
+  onStopPlayer?: () => void;
 }
 
 interface AudioAnimatedBackgroundProps {
   currentMode: Mode;
+  customModes?: Record<Mode, ModeConfig>;
   currentTitle: string;
   watchlistTitle: string;
   isPlaying: boolean;
@@ -88,19 +96,47 @@ interface AudioAnimatedBackgroundProps {
 
 const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
   currentMode,
+  customModes,
   currentTitle,
   watchlistTitle,
   isPlaying,
   currentFile,
   togglePlay
 }) => {
-  const coverImage = currentFile?.coverImage || currentFile?.thumbnail || currentFile?.poster || getEpisodeInspiredCover(currentTitle, watchlistTitle, []);
+  let coverImage = '';
+  if (currentMode === 'quran') {
+    const rawCover = currentFile?.coverImage || currentFile?.thumbnail || currentFile?.poster;
+    // Use raw cover only if it is a specific user custom image and not a generic video SVG or movie photo
+    if (rawCover && !rawCover.startsWith('data:image/svg+xml') && !rawCover.includes('1574375927938') && !rawCover.includes('1594909122845') && !rawCover.includes('1489599849927')) {
+      coverImage = rawCover;
+    } else {
+      const quranCovers = THEMATIC_IMAGES.quran;
+      let seed = (currentTitle || '') + (watchlistTitle || '');
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = (hash << 5) - hash + seed.charCodeAt(i);
+        hash |= 0;
+      }
+      coverImage = quranCovers[Math.abs(hash) % quranCovers.length];
+    }
+  } else {
+    const rawCover = currentFile?.coverImage || currentFile?.thumbnail || currentFile?.poster;
+    if (rawCover && !rawCover.includes('1574375927938')) {
+      coverImage = rawCover;
+    } else {
+      coverImage = getEpisodeInspiredCover(currentTitle, watchlistTitle, currentFile ? [currentFile] : [], currentMode);
+    }
+  }
+
+  const modeConfig = customModes?.[currentMode] || MODES[currentMode];
+  const modeBgImage = modeConfig?.bgImage;
+  const modeBgOpacity = modeConfig?.bgOpacity ?? 45;
 
   const getModeConfig = () => {
     switch (currentMode) {
       case 'quran':
         return {
-          bgGradient: 'from-emerald-950 via-teal-950/90 to-slate-950',
+          bgGradient: 'from-emerald-950/90 via-teal-950/80 to-slate-950',
           accentGradient: 'from-amber-400 via-yellow-300 to-emerald-400',
           glowColor: 'rgba(251, 191, 36, 0.25)',
           badgeText: 'القرآن الكريم والتلاوات المباركة',
@@ -111,7 +147,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         };
       case 'music':
         return {
-          bgGradient: 'from-violet-950 via-purple-950/90 to-fuchsia-950',
+          bgGradient: 'from-violet-950/90 via-purple-950/80 to-fuchsia-950',
           accentGradient: 'from-fuchsia-400 via-pink-400 to-cyan-400',
           glowColor: 'rgba(217, 70, 239, 0.3)',
           badgeText: 'استماع موسيقي وصوتي',
@@ -122,7 +158,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         };
       case 'kids':
         return {
-          bgGradient: 'from-amber-950 via-purple-950/90 to-pink-950',
+          bgGradient: 'from-amber-950/90 via-purple-950/80 to-pink-950',
           accentGradient: 'from-yellow-300 via-pink-400 to-sky-300',
           glowColor: 'rgba(250, 204, 21, 0.3)',
           badgeText: 'عالم الأطفال والمرح',
@@ -133,7 +169,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         };
       case 'cinema':
         return {
-          bgGradient: 'from-red-950 via-zinc-950 to-black',
+          bgGradient: 'from-red-950/90 via-zinc-950 to-black',
           accentGradient: 'from-red-500 via-amber-400 to-red-600',
           glowColor: 'rgba(239, 68, 68, 0.25)',
           badgeText: 'أوديو سينمائي',
@@ -144,7 +180,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         };
       case 'docs':
         return {
-          bgGradient: 'from-teal-950 via-cyan-950/90 to-slate-950',
+          bgGradient: 'from-teal-950/90 via-cyan-950/80 to-slate-950',
           accentGradient: 'from-emerald-400 via-cyan-300 to-teal-200',
           glowColor: 'rgba(52, 211, 153, 0.25)',
           badgeText: 'وثائقي ومعرفة',
@@ -155,7 +191,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         };
       default: // family
         return {
-          bgGradient: 'from-slate-950 via-indigo-950/90 to-purple-950',
+          bgGradient: 'from-slate-950/90 via-indigo-950/80 to-purple-950',
           accentGradient: 'from-indigo-300 via-sky-300 to-purple-300',
           glowColor: 'rgba(99, 102, 241, 0.25)',
           badgeText: 'مشغل الصوتيات العائلي',
@@ -171,9 +207,25 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
   const ModeIcon = config.icon;
 
   return (
-    <div className={`relative w-full h-full flex flex-col items-center justify-center overflow-hidden bg-gradient-to-b ${config.bgGradient} select-none`}>
+    <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden bg-black select-none">
+      {/* Mode Background Image */}
+      {modeBgImage ? (
+        <div className="absolute inset-0 pointer-events-none z-0">
+          <img 
+            src={modeBgImage} 
+            alt={`${modeConfig?.title || currentMode} background`} 
+            className="w-full h-full object-cover transition-all duration-700"
+            style={{ opacity: Math.max(0.25, (modeBgOpacity ?? 45) / 100) }}
+          />
+          <div className={`absolute inset-0 bg-gradient-to-b ${config.bgGradient} opacity-85`} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+        </div>
+      ) : (
+        <div className={`absolute inset-0 bg-gradient-to-b ${config.bgGradient}`} />
+      )}
+
       {/* Background Animated Particles & Aura Spheres */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
         <motion.div 
           animate={{
             scale: isPlaying ? [1, 1.25, 1] : 1,
@@ -224,22 +276,49 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         ))}
       </div>
 
+      {/* Album Cover / Vinyl Record Disc Art */}
+      <div className="relative z-20 flex flex-col items-center mb-3">
+        <motion.div 
+          animate={isPlaying ? { rotate: 360 } : { rotate: 0 }}
+          transition={isPlaying ? { duration: 22, repeat: Infinity, ease: "linear" } : { duration: 0.5 }}
+          onClick={togglePlay}
+          className={`relative w-32 h-32 sm:w-44 sm:h-44 rounded-full border-4 ${config.centerRingColor} shadow-2xl overflow-hidden cursor-pointer group flex items-center justify-center bg-black/60 backdrop-blur-md`}
+        >
+          <img 
+            src={coverImage} 
+            alt={currentTitle} 
+            className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity" 
+          />
+          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+            {!isPlaying && (
+              <div className="p-3 sm:p-4 bg-white/90 text-black rounded-full shadow-lg group-hover:scale-110 transition-transform">
+                <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-black translate-x-[2px]" />
+              </div>
+            )}
+          </div>
+          {/* Vinyl Center Hole */}
+          <div className="absolute w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-zinc-950 border-2 border-amber-400/80 shadow-inner flex items-center justify-center pointer-events-none">
+            <div className="w-2 h-2 rounded-full bg-amber-400" />
+          </div>
+        </motion.div>
+      </div>
+
       {/* Mode Badge & Title Header */}
-      <div className="relative z-10 flex flex-col items-center mb-6 px-4 text-center">
-        <div className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold border backdrop-blur-md flex items-center gap-2 mb-3 shadow-lg ${config.badgeBg}`}>
+      <div className="relative z-20 flex flex-col items-center mb-4 px-4 text-center">
+        <div className={`px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold border backdrop-blur-md flex items-center gap-2 mb-2 shadow-lg ${config.badgeBg}`}>
           <ModeIcon className="w-4 h-4" />
-          <span>{config.badgeText}</span>
+          <span>{modeConfig?.title || config.badgeText}</span>
         </div>
-        <h2 className="text-2xl sm:text-4xl font-extrabold text-white drop-shadow-xl max-w-2xl line-clamp-1">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-white drop-shadow-xl max-w-2xl line-clamp-1">
           {currentTitle}
         </h2>
-        <p className="text-sm sm:text-base text-white/70 mt-1 font-medium drop-shadow-md">
+        <p className="text-sm sm:text-base text-white/80 mt-1 font-medium drop-shadow-md">
           {watchlistTitle}
         </p>
       </div>
 
       {/* Dynamic Audio Equalizer Wave Spectrum */}
-      <div className="relative z-10 flex items-end justify-center gap-1.5 sm:gap-2 mt-5 h-14 px-6 py-2 bg-black/30 backdrop-blur-md rounded-2xl border border-white/10">
+      <div className="relative z-20 flex items-end justify-center gap-1.5 sm:gap-2 mt-2 h-12 px-6 py-2 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10">
         {[18, 34, 22, 45, 28, 52, 38, 20, 42, 58, 30, 48, 24, 36, 50, 26, 40, 18].map((height, idx) => (
           <motion.div
             key={idx}
@@ -259,7 +338,7 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
         ))}
       </div>
 
-      <div className="relative z-10 mt-3 text-xs sm:text-sm text-white/70 font-semibold flex items-center gap-2">
+      <div className="relative z-20 mt-3 text-xs sm:text-sm text-white/80 font-semibold flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-green-400 animate-ping' : 'bg-amber-400'}`} />
         <span>{isPlaying ? 'جاري تشغيل المقطع الصوتي...' : 'المشغل متوقف مؤقتاً'}</span>
       </div>
@@ -269,6 +348,8 @@ const AudioAnimatedBackground: React.FC<AudioAnimatedBackgroundProps> = ({
 
 export const PlayerView: React.FC<PlayerViewProps> = ({ 
   onExit, 
+  onRestoreView,
+  onPipStateChange,
   file, 
   title = "الحلقة 1", 
   watchlistTitle = "قائمة التشغيل",
@@ -276,13 +357,19 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   initialIndex = 0,
   initialTime = 0,
   currentMode = 'family',
+  customModes,
   onProgressUpdate,
   channels = [],
   currentChannelId,
   watchlists = [],
   schedules = [],
-  onPlayChannel
+  onPlayChannel,
+  isFloating = false,
+  onToggleFloating,
+  onStopPlayer
 }) => {
+  const [isFloatingLocal, setIsFloatingLocal] = useState<boolean>(false);
+  const isFloatingMode = isFloating || isFloatingLocal;
   // Do Not Disturb (Cinema Mode) Toggle State
   const [isDndActive, setIsDndActive] = useState<boolean>(() => {
     return localStorage.getItem('app_dnd_enabled') === 'true';
@@ -901,7 +988,62 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   const [showVolumeControl, setShowVolumeControl] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPipActive, setIsPipActive] = useState(false);
+
+  // Monitor Picture-in-Picture enter and leave events
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    const handleEnterPip = () => {
+      setIsPipActive(true);
+      if (onPipStateChange) onPipStateChange(true);
+    };
+
+    const handleLeavePip = () => {
+      setIsPipActive(false);
+      if (onPipStateChange) onPipStateChange(false);
+      // Restore view to main player whenever user exits floating window
+      if (onRestoreView) {
+        onRestoreView();
+      }
+    };
+
+    videoEl.addEventListener('enterpictureinpicture', handleEnterPip);
+    videoEl.addEventListener('leavepictureinpicture', handleLeavePip);
+
+    return () => {
+      videoEl.removeEventListener('enterpictureinpicture', handleEnterPip);
+      videoEl.removeEventListener('leavepictureinpicture', handleLeavePip);
+    };
+  }, [onRestoreView, onPipStateChange]);
+
+  // Track isPipActive in a ref to avoid stale closures in unmount cleanup
+  const isPipActiveRef = useRef(isPipActive);
+  useEffect(() => {
+    isPipActiveRef.current = isPipActive;
+  }, [isPipActive]);
+
+  // Clean up audio on unmount if PiP is not active
+  useEffect(() => {
+    return () => {
+      if (!isPipActiveRef.current) {
+        if (document.pictureInPictureElement) {
+          document.exitPictureInPicture().catch(() => {});
+        }
+        if ((window as any).documentPictureInPicture?.window) {
+          try {
+            (window as any).documentPictureInPicture.window.close();
+          } catch (e) {}
+        }
+        if (videoRef.current) {
+          videoRef.current.pause();
+        }
+      }
+    };
+  }, []);
   const [progress, setProgress] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const initialTimeOnTouch = useRef<number>(0);
@@ -1098,15 +1240,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   };
 
   const togglePip = async () => {
-    try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else if (document.pictureInPictureEnabled && videoRef.current) {
-        await videoRef.current.requestPictureInPicture();
-      }
-    } catch (err) {
-      console.error("PIP failed", err);
-    }
+    handleBackToFloating();
   };
 
   const toggleFullscreen = () => {
@@ -1151,11 +1285,69 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
     }
   };
 
-  const handleExitWithSave = () => {
+  const handleRequestNativePiP = async () => {
+    const videoElement = videoRef.current;
+
+    if (onProgressUpdate && videoElement) {
+      onProgressUpdate(currentIndex, videoElement.currentTime);
+    }
+
+    if (videoElement && (('documentPictureInPicture' in window) || document.pictureInPictureEnabled) && !document.pictureInPictureElement) {
+      try {
+        await videoElement.requestPictureInPicture();
+      } catch (error) {
+        console.warn("Native Picture-in-Picture request failed, using floating mini-player:", error);
+      }
+    }
+
+    if (onToggleFloating) {
+      onToggleFloating(true);
+    }
+    setIsFloatingLocal(true);
+    onExit();
+  };
+
+  const handleBackToFloating = () => {
+    // If native browser PiP is active, close it so we don't have duplicate floating windows
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    }
+    if ((window as any).documentPictureInPicture?.window) {
+      (window as any).documentPictureInPicture.window.close();
+    }
+
+    const videoElement = videoRef.current;
+    if (onProgressUpdate && videoElement) {
+      onProgressUpdate(currentIndex, videoElement.currentTime);
+    }
+
+    if (onToggleFloating) {
+      onToggleFloating(true);
+    }
+    setIsFloatingLocal(true);
+    onExit();
+  };
+
+  const handleStopAndClose = () => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
     if (onProgressUpdate && videoRef.current) {
       onProgressUpdate(currentIndex, videoRef.current.currentTime);
     }
-    onExit();
+    if (onToggleFloating) {
+      onToggleFloating(false);
+    }
+    setIsFloatingLocal(false);
+    if (onStopPlayer) {
+      onStopPlayer();
+    } else {
+      onExit();
+    }
+  };
+
+  const handleExitWithSave = () => {
+    handleBackToFloating();
   };
 
   const rotateVideo = () => {
@@ -1704,94 +1896,150 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
   };
 
 
+  // Single Unified Player Render
   return (
     <motion.div 
       ref={containerRef}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed z-50 bg-black flex flex-col overflow-hidden"
-      style={{
-        width: rotation % 180 !== 0 ? '100dvh' : '100vw',
-        height: rotation % 180 !== 0 ? '100vw' : '100dvh',
-        top: '50%',
-        left: '50%',
-        transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-      }}
-      onMouseMove={handleInteraction}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onKeyDown={handleInteraction}
-      tabIndex={0}
+      drag={isFloatingMode}
+      dragMomentum={false}
+      dragElastic={0.05}
+      initial={{ opacity: 0, scale: isFloatingMode ? 0.9 : 1 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.15 }}
+      className={
+        isFloatingMode
+          ? "fixed bottom-6 left-6 z-[999] w-80 sm:w-96 rounded-3xl bg-zinc-950/95 border-2 border-amber-400/90 shadow-[0_25px_60px_rgba(0,0,0,0.95)] backdrop-blur-2xl overflow-hidden flex flex-col text-right dir-rtl cursor-grab active:cursor-grabbing"
+          : "fixed inset-0 z-50 bg-black flex flex-col overflow-hidden text-right dir-rtl"
+      }
+      style={
+        !isFloatingMode && rotation % 180 !== 0
+          ? {
+              width: '100dvh',
+              height: '100vw',
+              top: '50%',
+              left: '50%',
+              transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+            }
+          : undefined
+      }
+      dir="rtl"
+      onMouseMove={!isFloatingMode ? handleInteraction : undefined}
+      onTouchStart={!isFloatingMode ? handleTouchStart : undefined}
+      onTouchMove={!isFloatingMode ? handleTouchMove : undefined}
+      onTouchEnd={!isFloatingMode ? handleTouchEnd : undefined}
+      onKeyDown={!isFloatingMode ? handleInteraction : undefined}
+      tabIndex={!isFloatingMode ? 0 : undefined}
     >
-      {/* Mode Transition Visual Screen Glow & Flash Effect */}
-      <AnimatePresence>
-        {showModeGlow && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.05 }}
-            transition={{ duration: 0.5 }}
-            className="absolute inset-0 pointer-events-none z-30 flex items-center justify-center overflow-hidden"
-          >
-            <div className={`absolute inset-0 border-8 sm:border-[16px] rounded-2xl ${MODE_GLOW_COLORS[activeMode]?.ring || 'border-amber-400'} ${MODE_GLOW_COLORS[activeMode]?.shadow || ''} animate-pulse`} />
-            <motion.div 
-              initial={{ opacity: 0.9, scale: 0.2 }}
-              animate={{ opacity: 0, scale: 2.8 }}
-              transition={{ duration: 2, ease: "easeOut" }}
-              className={`absolute w-[600px] h-[600px] rounded-full bg-gradient-to-r ${MODE_GLOW_COLORS[activeMode]?.bgGradient || 'from-amber-500/40 via-yellow-400/30 to-black'} blur-3xl`}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* 1. FLOATING HEADER (Only when isFloatingMode) */}
+      {isFloatingMode && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-900/90 border-b border-white/10 text-white shrink-0 z-20">
+          <div className="flex items-center gap-2 min-w-0 flex-1 pl-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0" />
+            <span className="text-xs font-black text-amber-300 truncate">{watchlistTitle}</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Maximize Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onToggleFloating) onToggleFloating(false);
+                setIsFloatingLocal(false);
+                if (onRestoreView) onRestoreView();
+              }}
+              className="p-1.5 rounded-xl bg-white/10 hover:bg-amber-400 hover:text-black text-white transition-colors cursor-pointer"
+              title="إعادة تكبير المشغل (ملء الشاشة)"
+            >
+              <Maximize className="w-4 h-4" />
+            </button>
+            {/* Stop / Close Button */}
+            <button
+              type="button"
+              onClick={handleStopAndClose}
+              className="p-1.5 rounded-xl bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white transition-colors cursor-pointer"
+              title="إغلاق المشغل وإيقاف التشغيل نهائياً"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* Mode Transition Alert Notification Banner */}
-      <AnimatePresence>
-        {modeTransitionBanner && (
-          <motion.div
-            initial={{ opacity: 0, y: -70, scale: 0.8 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -50, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 350, damping: 25 }}
-            className="absolute top-20 sm:top-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none max-w-sm sm:max-w-md w-11/12"
-          >
-            <div className={`relative px-5 py-3.5 rounded-2xl bg-gradient-to-r ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.bgGradient || 'from-amber-950/90 via-zinc-900/95 to-amber-950/90'} border-2 ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.ring || 'border-amber-400'} shadow-[0_0_50px_rgba(245,158,11,0.6)] backdrop-blur-2xl flex items-center justify-between gap-3 text-white overflow-hidden`}>
-              <motion.div 
-                initial={{ x: '-100%' }}
-                animate={{ x: '250%' }}
-                transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none"
-              />
+      {/* 2. MODE TRANSITION GLOW & BANNER (Only when !isFloatingMode) */}
+      {!isFloatingMode && (
+        <>
+          <AnimatePresence>
+            {showModeGlow && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                transition={{ duration: 0.5 }}
+                className="absolute inset-0 pointer-events-none z-30 flex items-center justify-center overflow-hidden"
+              >
+                <div className={`absolute inset-0 border-8 sm:border-[16px] rounded-2xl ${MODE_GLOW_COLORS[activeMode]?.ring || 'border-amber-400'} ${MODE_GLOW_COLORS[activeMode]?.shadow || ''} animate-pulse`} />
+                <motion.div 
+                  initial={{ opacity: 0.9, scale: 0.2 }}
+                  animate={{ opacity: 0, scale: 2.8 }}
+                  transition={{ duration: 2, ease: "easeOut" }}
+                  className={`absolute w-[600px] h-[600px] rounded-full bg-gradient-to-r ${MODE_GLOW_COLORS[activeMode]?.bgGradient || 'from-amber-500/40 via-yellow-400/30 to-black'} blur-3xl`}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-              <div className="flex items-center gap-3 relative z-10">
-                <div className="text-2xl sm:text-3xl p-2 rounded-xl bg-white/10 backdrop-blur-md shadow-inner flex items-center justify-center shrink-0 border border-white/20">
-                  {MODE_GLOW_COLORS[modeTransitionBanner.mode]?.icon || '⚡'}
+          <AnimatePresence>
+            {modeTransitionBanner && (
+              <motion.div
+                initial={{ opacity: 0, y: -70, scale: 0.8 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -50, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                className="absolute top-20 sm:top-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none max-w-sm sm:max-w-md w-11/12"
+              >
+                <div className={`relative px-5 py-3.5 rounded-2xl bg-gradient-to-r ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.bgGradient || 'from-amber-950/90 via-zinc-900/95 to-amber-950/90'} border-2 ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.ring || 'border-amber-400'} shadow-[0_0_50px_rgba(245,158,11,0.6)] backdrop-blur-2xl flex items-center justify-between gap-3 text-white overflow-hidden`}>
+                  <motion.div 
+                    initial={{ x: '-100%' }}
+                    animate={{ x: '250%' }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+                    className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none"
+                  />
+
+                  <div className="flex items-center gap-3 relative z-10">
+                    <div className="text-2xl sm:text-3xl p-2 rounded-xl bg-white/10 backdrop-blur-md shadow-inner flex items-center justify-center shrink-0 border border-white/20">
+                      {MODE_GLOW_COLORS[modeTransitionBanner.mode]?.icon || '⚡'}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] sm:text-xs text-amber-300 font-extrabold uppercase tracking-wider flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                        انتقال الجلسة الذكية
+                      </span>
+                      <span className="text-base sm:text-xl font-black text-white drop-shadow-md">
+                        وضع {modeTransitionBanner.modeName}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className={`px-3 py-1 rounded-full text-xs font-black shadow-lg ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.badge || 'bg-amber-400 text-black'} shrink-0 relative z-10 animate-bounce`}>
+                    نشط الآن ⚡
+                  </div>
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] sm:text-xs text-amber-300 font-extrabold uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                    انتقال الجلسة الذكية
-                  </span>
-                  <span className="text-base sm:text-xl font-black text-white drop-shadow-md">
-                    وضع {modeTransitionBanner.modeName}
-                  </span>
-                </div>
-              </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
-              <div className={`px-3 py-1 rounded-full text-xs font-black shadow-lg ${MODE_GLOW_COLORS[modeTransitionBanner.mode]?.badge || 'bg-amber-400 text-black'} shrink-0 relative z-10 animate-bounce`}>
-                نشط الآن ⚡
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Video Canvas / Audio Animated Background Canvas */}
+      {/* 3. VIDEO CANVAS CONTAINER (Shared single <video> node!) */}
       <div 
-        className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden cursor-pointer bg-black"
+        ref={videoContainerRef}
+        className={
+          isFloatingMode
+            ? "relative aspect-video w-full bg-black flex items-center justify-center overflow-hidden cursor-pointer"
+            : "absolute inset-0 z-0 flex items-center justify-center overflow-hidden cursor-pointer bg-black"
+        }
         onClick={togglePlay}
       >
-        {/* Video element with custom color filters and aspect ratio */}
         <video 
           ref={videoRef}
           src={videoUrl || undefined} 
@@ -1836,9 +2084,68 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           }}
         />
 
+        {/* Audio Visualizer Background (Only when !isFloatingMode & isAudio) */}
+        {!isFloatingMode && isAudio && (
+          <AudioAnimatedBackground 
+            currentMode={activeMode}
+            customModes={customModes}
+            currentTitle={currentTitle}
+            watchlistTitle={watchlistTitle}
+            isPlaying={isPlaying}
+            videoRef={videoRef}
+          />
+        )}
+
+        {/* Floating Mode Center Play/Pause & Progress Bar */}
+        {isFloatingMode && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 hover:bg-amber-400 hover:text-black text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all cursor-pointer shadow-lg opacity-90 hover:scale-110 z-10"
+            >
+              {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current translate-x-[1px]" />}
+            </button>
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20 z-10">
+              <div className="h-full bg-amber-400 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 4. FLOATING BOTTOM CONTROLS BAR (Only when isFloatingMode) */}
+      {isFloatingMode && (
+        <div className="p-3 bg-zinc-950 flex items-center justify-between gap-2 shrink-0 z-20">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-extrabold text-white truncate">{currentTitle}</p>
+            <p className="text-[10px] text-white/60 font-mono truncate">{currentTimeStr} / {durationStr}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (onToggleFloating) onToggleFloating(false);
+              setIsFloatingLocal(false);
+              if (onRestoreView) onRestoreView();
+            }}
+            className="px-3 py-1.5 rounded-xl bg-amber-400 text-black font-black text-[11px] hover:bg-amber-300 transition-all shrink-0 flex items-center gap-1 cursor-pointer shadow-md"
+          >
+            <span>توسيع</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 5. FULL SCREEN OVERLAYS & CONTROLS (Only when !isFloatingMode) */}
+      {!isFloatingMode && (
+        <>
+
         {isAudio ? (
           <AudioAnimatedBackground 
             currentMode={activeMode}
+            customModes={customModes}
             currentTitle={currentTitle}
             watchlistTitle={watchlistTitle}
             isPlaying={isPlaying}
@@ -1877,27 +2184,7 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
               </div>
             </div>
           </div>
-        ) : videoUrl ? (
-          <>
-            {!isPlaying && !videoError && (
-              <div 
-                onClick={togglePlay}
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] cursor-pointer transition-all"
-              >
-                <motion.div 
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="p-7 bg-white text-black rounded-full shadow-2xl hover:scale-110 transition-transform flex items-center justify-center gap-2 group"
-                >
-                  <Play className="w-12 h-12 fill-black translate-x-[2px]" />
-                </motion.div>
-                <p className="mt-4 text-white font-bold text-lg drop-shadow-md bg-black/60 px-6 py-2 rounded-full border border-white/20">
-                  اضغط هنا لتشغيل الفيديو 🎬
-                </p>
-              </div>
-            )}
-          </>
-        ) : (
+        ) : videoUrl ? null : (
           <div className="relative w-full h-full flex flex-col items-center justify-center bg-zinc-950">
             <img src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&q=80&w=2000" className="w-full h-full object-cover opacity-40" alt="Video frame" />
             <div className="absolute inset-0 bg-black/50" />
@@ -1908,7 +2195,6 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
             </div>
           </div>
         )}
-      </div>
 
       {/* Seek / Volume Keyboard Shortcut Overlay Feedback */}
       <AnimatePresence>
@@ -2439,10 +2725,11 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
         <div className="p-4 sm:p-8 flex justify-between items-center bg-gradient-to-b from-black/90 via-black/60 to-transparent">
           <button 
             onClick={handleExitWithSave} 
-            className="p-3 glass rounded-full hover:bg-white hover:text-black transition-colors cursor-pointer"
-            title="خروج من المشغل"
+            className="p-2.5 sm:px-4 sm:py-2.5 glass rounded-full hover:bg-white hover:text-black transition-all cursor-pointer flex items-center gap-2 border border-white/20 hover:scale-105 active:scale-95 shadow-lg group"
+            title="رجوع (تصغير للنافذة العائمة ومتابعة التشغيل)"
           >
-            <ArrowRight className="w-6 h-6" />
+            <ArrowRight className="w-6 h-6 text-amber-400 group-hover:text-black" />
+            <span className="text-sm font-extrabold text-white group-hover:text-black hidden sm:inline">رجوع</span>
           </button>
           <div className="text-center flex flex-col items-center">
             <h2 className="text-xl sm:text-2xl font-bold drop-shadow-lg text-white">{watchlistTitle}</h2>
@@ -2792,11 +3079,9 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
                   <button onClick={togglePlaybackSpeed} className="text-white/70 hover:text-white transition-colors p-2 font-bold flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full hover:bg-white/10 shrink-0" title="سرعة التشغيل">
                     <span className="text-sm">{playbackRate}x</span>
                   </button>
-                  {document.pictureInPictureEnabled && (
-                    <button onClick={togglePip} className="text-white/70 hover:text-white transition-colors p-2 shrink-0" title="نافذة عائمة (PiP)">
-                      <PictureInPicture className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </button>
-                  )}
+                  <button onClick={togglePip} className="text-white/70 hover:text-white transition-colors p-2 shrink-0 cursor-pointer" title="نافذة عائمة (PiP)">
+                    <PictureInPicture className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </button>
                   <button onClick={toggleFullscreen} className="text-white/70 hover:text-white transition-colors p-2 shrink-0" title="ملئ الشاشة">
                     {isFullscreen ? <Minimize className="w-5 h-5 sm:w-6 sm:h-6" /> : <Maximize className="w-5 h-5 sm:w-6 sm:h-6" />}
                   </button>
@@ -3125,6 +3410,8 @@ export const PlayerView: React.FC<PlayerViewProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+      </>
+      )}
     </motion.div>
   );
 };

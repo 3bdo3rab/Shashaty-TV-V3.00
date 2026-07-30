@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MODE_SECTIONS, MODE_LIBRARY_TITLES, MODES } from '../data';
 import { Watchlist, Mode, ModeConfig, WeeklyScheduleEntry, Session } from '../types';
-import { Play, RotateCcw, Edit3, FolderPlus, X, Plus, UploadCloud, CheckCircle2, Layers, Trash2, Pencil, Save, Tv, Film, Globe, Baby, BookOpen, Music, Folder, Search, GripVertical, ChevronRight, ChevronLeft, Check, ChevronDown, CheckSquare, Square, Sparkles, Clock, Calendar, RefreshCw, FolderSearch, FolderCheck } from 'lucide-react';
+import { Play, RotateCcw, Edit3, FolderPlus, X, Plus, UploadCloud, CheckCircle2, Layers, Trash2, Pencil, Save, Tv, Film, Globe, Baby, BookOpen, Music, Folder, Search, GripVertical, ChevronRight, ChevronLeft, Check, ChevronDown, CheckSquare, Square, Sparkles, Clock, Calendar, RefreshCw, FolderSearch, FolderCheck, List } from 'lucide-react';
 import WatchlistDetailsView from './WatchlistDetailsView';
 import { FolderTreePreview, buildWatchlistsFromFiles } from './CreateWatchlistView';
 import { getEpisodeInspiredCover, getWatchlistCover, extractVideoFrameThumbnail } from '../utils/coverHelper';
@@ -11,7 +11,7 @@ import { sortSmartMediaFiles, naturalCompare, normalizeArabicText } from '../uti
 import { store } from '../utils/store';
 import { useDialog } from '../contexts/DialogContext';
 import { ProcessingRing } from '../components/ProcessingRing';
-import { getFilesFromDirectoryHandle } from '../utils/fileSystem';
+import { getFilesFromDirectoryHandle, isCrossOriginIframe } from '../utils/fileSystem';
 
 const ALL_MODES: Mode[] = ['family', 'kids', 'cinema', 'docs', 'quran', 'music', 'night'];
 
@@ -71,6 +71,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onAddCategory
 }) => {
   const [activeSection, setActiveSection] = useState<string>('الكل');
+  const [libraryTypeFilter, setLibraryTypeFilter] = useState<'all' | 'playlists' | 'singles'>('all');
   const [selectedList, setSelectedList] = useState<Watchlist | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('جاري معالجة وسائط المكتبة...');
@@ -198,6 +199,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       return;
     }
 
+    if (isCrossOriginIframe()) {
+      await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من فحص المجلدات المباشرة (بسبب قيود المتصفح داخل الإطار).');
+      return;
+    }
+
     if (!('showDirectoryPicker' in window)) {
       await showAlert('المتصفح الحالي لا يدعم الوصول المباشر للمجلدات. يرجى استخدام متصفح حديث مثل Chrome/Edge.');
       return;
@@ -258,8 +264,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       }
     } catch (e: any) {
       setIsProcessing(false);
-      if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted')) {
-        console.error('Error scanning folders:', e);
+      if (e && (e.name === 'SecurityError' || (e.message && e.message.includes('cross origin')) || e.name === 'NotAllowedError')) {
+        await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من اختيار المجلد (بسبب قيود المتصفح).');
+      } else if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted') && !e.message?.includes('cancel')) {
+        console.warn('Error scanning folders:', e);
         await showAlert('حدث خطأ أثناء فحص المجلد. يرجى التأكد من اختيار مجلد صالح ومنح الصلاحية.');
       }
     }
@@ -754,9 +762,30 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     return titleMatch || sectionMatch || folderMatch || filesMatch || seasonsMatch;
   };
 
-  // Filter watchlists dynamically so modes don't mix
+  // Base mode watchlists
+  const modeBaseWatchlists = watchlists.filter(list => {
+    if (isKidsMode) {
+      return list.targetMode === 'kids' || 
+        ['عربي', 'إسلامي', 'أجنبي معرّب', 'أجنبي', 'تعليمي', 'أغاني', 'أطفال', 'كرتون'].includes(list.section);
+    } else {
+      const isKidsList = list.targetMode === 'kids' || ['عربي', 'إسلامي', 'أجنبي معرّب', 'أجنبي', 'تعليمي', 'أغاني', 'أطفال', 'كرتون'].includes(list.section);
+      if (isKidsList) return false;
+      if (list.targetMode && list.targetMode !== currentMode) return false;
+      return true;
+    }
+  });
+
+  const totalSinglesCount = modeBaseWatchlists.filter(list => (list.isSingleFile === true) || (list.episodesCount === 1) || (list.files?.length === 1 && (!list.seasons || list.seasons.length === 0))).length;
+  const totalPlaylistsCount = modeBaseWatchlists.length - totalSinglesCount;
+  const totalModeCount = modeBaseWatchlists.length;
+
+  // Filter watchlists dynamically so modes and types don't mix
   const filteredWatchlists = watchlists.filter(list => {
     if (!matchesSearch(list)) return false;
+
+    const isSingle = (list.isSingleFile === true) || (list.episodesCount === 1) || (list.files?.length === 1 && (!list.seasons || list.seasons.length === 0));
+    if (libraryTypeFilter === 'playlists' && isSingle) return false;
+    if (libraryTypeFilter === 'singles' && !isSingle) return false;
 
     if (isKidsMode) {
       const isKidsList = list.targetMode === 'kids' || 
@@ -775,6 +804,70 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       return list.section === activeSection;
     }
   });
+
+  // Group single video files into a special combined playlist for unified library display
+  const sortedWatchlists = useMemo(() => {
+    const isSingleList = (list: Watchlist) => 
+      (list.isSingleFile === true) || (list.episodesCount === 1) || (list.files?.length === 1 && (!list.seasons || list.seasons.length === 0));
+
+    const singleFileWatchlists = filteredWatchlists.filter(isSingleList);
+    const regularWatchlists = filteredWatchlists.filter(w => !isSingleList(w));
+
+    // Sort regular playlists (newest first)
+    const sortedRegular = [...regularWatchlists].sort((a, b) => {
+      const numA = Number(a.id);
+      const numB = Number(b.id);
+      if (!isNaN(numA) && !isNaN(numB) && numA > 0 && numB > 0) {
+        return numB - numA;
+      }
+      return b.id.localeCompare(a.id);
+    });
+
+    if (singleFileWatchlists.length === 0) {
+      return sortedRegular;
+    }
+
+    // Combine all single video files into ONE special playlist card
+    const allSingleFiles = singleFileWatchlists.flatMap(w => {
+      if (w.files && w.files.length > 0) return w.files;
+      return [{
+        name: w.title,
+        title: w.title,
+        size: '0 MB',
+        coverImage: w.coverImage
+      }];
+    });
+
+    const firstCover = singleFileWatchlists.find(w => w.coverImage)?.coverImage || getWatchlistCover(singleFileWatchlists[0]);
+
+    const combinedSinglePlaylist: Watchlist = {
+      id: 'combined_single_files_playlist',
+      title: 'قائمة الملفات المنفردة 🎬',
+      section: activeSection === 'الكل' ? 'عام' : activeSection,
+      targetMode: currentMode,
+      isSingleFile: false,
+      seriesCount: 1,
+      episodesCount: allSingleFiles.length,
+      files: allSingleFiles,
+      coverImage: firstCover,
+      lastWatched: '',
+      progress: 0,
+      timeRemaining: '',
+      folderName: 'قائمة الملفات المنفردة',
+      folderPath: '/قائمة الملفات المنفردة'
+    };
+
+    if (libraryTypeFilter === 'singles') {
+      return [combinedSinglePlaylist];
+    }
+
+    if (libraryTypeFilter === 'playlists') {
+      return sortedRegular;
+    }
+
+    // Default 'all': Show combined single files playlist card first, followed by regular playlists
+    return [combinedSinglePlaylist, ...sortedRegular];
+  }, [filteredWatchlists, libraryTypeFilter, activeSection, currentMode]);
 
   const handleStartEditWatchlist = (e: React.MouseEvent, list: Watchlist) => {
     e.stopPropagation();
@@ -841,9 +934,22 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     const updatedSeasons = editWatchlistSeasons !== null ? editWatchlistSeasons : (editingWatchlist.seasons || []);
     const updatedFolderName = editWatchlistFolderName !== null ? editWatchlistFolderName : (editingWatchlist.folderName || editingWatchlist.title);
     
-    const updatedCover = (editWatchlistFiles !== null && updatedFiles.length > 0)
-      ? getEpisodeInspiredCover(updatedFiles[0]?.name || editTitle, updatedFiles[0])
-      : editingWatchlist.coverImage;
+    let updatedCover = editingWatchlist.coverImage;
+    if (editWatchlistFiles !== null && updatedFiles.length > 0) {
+      const allFiles = [...updatedFiles, ...updatedSeasons.flatMap((s: any) => s.files || [])];
+      const firstFile = allFiles.find(f => f instanceof File || (f && ((f as any).rawFile instanceof File || (f as any).blobUrl)));
+      if (firstFile) {
+        try {
+          const thumb = await extractVideoFrameThumbnail(firstFile);
+          if (thumb) updatedCover = thumb;
+        } catch (e) {
+          console.warn('Video frame thumbnail extraction error:', e);
+        }
+      }
+      if (!updatedCover) {
+        updatedCover = getWatchlistCover({ title: editTitle, section: editSection, files: updatedFiles, seasons: updatedSeasons, targetMode: editTargetMode });
+      }
+    }
 
     const totalEpCount = updatedFiles.length > 0 ? updatedFiles.length : editingWatchlist.episodesCount;
     const seriesCount = updatedSeasons.length > 0 ? updatedSeasons.length : (editingWatchlist.seriesCount || 1);
@@ -868,7 +974,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   const handleConfirmDeleteWatchlist = () => {
     if (deletingWatchlist && onDeleteWatchlist) {
-      onDeleteWatchlist(deletingWatchlist.id);
+      if (deletingWatchlist.id === 'combined_single_files_playlist') {
+        const isSingleList = (list: Watchlist) => 
+          (list.isSingleFile === true) || (list.episodesCount === 1) || (list.files?.length === 1 && (!list.seasons || list.seasons.length === 0));
+        const singles = filteredWatchlists.filter(isSingleList);
+        singles.forEach(s => onDeleteWatchlist(s.id));
+      } else {
+        onDeleteWatchlist(deletingWatchlist.id);
+      }
     }
     setDeletingWatchlist(null);
   };
@@ -901,15 +1014,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   };
 
   const handleAddFolderClick = async () => {
+    if (isCrossOriginIframe()) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+      }
+      return;
+    }
+
     if ('showDirectoryPicker' in window) {
       try {
-        if (window.self !== window.top) {
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-            fileInputRef.current.click();
-          }
-          return;
-        }
         const dirHandle = await (window as any).showDirectoryPicker();
         if (dirHandle) {
           setImportedHandle(dirHandle);
@@ -954,7 +1068,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           return;
         }
       } catch (e: any) {
-        if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted')) {
+        if (e && (e.name === 'SecurityError' || e.message?.includes('cross origin') || e.name === 'NotAllowedError')) {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
+          }
+          return;
+        }
+        if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted') && !e.message?.includes('cancel')) {
           console.warn('showDirectoryPicker unavailable or cancelled:', e);
         }
       }
@@ -1073,6 +1194,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         id: w.id || (Date.now() + Math.random() * 1000).toString()
       }));
 
+      // Extract real video frame thumbnail for each watchlist (exact same mechanism as CreateWatchlistView)
+      for (const w of finalWatchlists) {
+        const allFiles = [...(w.files || []), ...(w.seasons?.flatMap((s: any) => s.files || []) || [])];
+        const firstFile = allFiles.find(f => f instanceof File || (f && ((f as any).rawFile instanceof File || (f as any).blobUrl)));
+        if (firstFile) {
+          try {
+            const thumb = await extractVideoFrameThumbnail(firstFile);
+            if (thumb) w.coverImage = thumb;
+          } catch (e) {
+            console.warn('Video frame thumbnail extraction error:', e);
+          }
+        }
+      }
+
       if (onAddWatchlist) {
         onAddWatchlist(finalWatchlists);
       }
@@ -1124,9 +1259,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         message={processingMessage} 
         subMessage="يرجى الانتظار لحين اكتمال معالجة البيانات والوسائط" 
       />
-      <header className="mb-4 sm:mb-6 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-        <div className="shrink-0 max-w-full overflow-hidden">
-          <div className="flex items-center gap-3 flex-wrap">
+      <header className="mb-6 flex flex-col gap-5">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+          {/* Library Name & Edit Button */}
+          <div className="flex items-center gap-3 shrink-0">
             {isEditingModeTitle ? (
               <form onSubmit={handleSaveModeTitle} className="flex items-center gap-2">
                 <input 
@@ -1139,286 +1275,63 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 />
               </form>
             ) : (
-              <>
+              <div className="flex items-center gap-3">
                 <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold tracking-tight drop-shadow-md whitespace-nowrap">
                   {currentModeTitle}
                 </h1>
                 <button 
                   onClick={handleStartEditModeTitle}
-                  className="p-2 glass rounded-full hover:bg-white/20 transition-colors text-white/70 hover:text-white"
+                  className="p-2 glass rounded-full hover:bg-white/20 transition-colors text-white/70 hover:text-white shrink-0 cursor-pointer"
                   title="تعديل اسم المكتبة"
                 >
                   <Pencil className="w-5 h-5 sm:w-6 sm:h-6" />
                 </button>
-              </>
-            )}
-
-            {/* Quick Smart Mode Switcher Badge */}
-            <button
-              type="button"
-              onClick={() => setIsModeSelectorModalOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-400 text-amber-300 hover:text-black border border-amber-400/40 font-extrabold text-xs sm:text-sm transition-all shadow-md cursor-pointer shrink-0 group"
-              title="انقر لتغيير وضع المكتبة"
-            >
-              <Sparkles className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
-              <span>الوضع: {MODE_DETAILS[currentMode]?.name || currentMode}</span>
-              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
-            </button>
-
-            {/* Folder Scan & Sync Button */}
-            <button
-              type="button"
-              onClick={handleScanLinkedFoldersForNewFiles}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-400 text-emerald-300 hover:text-black border border-emerald-400/40 font-extrabold text-xs sm:text-sm transition-all shadow-md cursor-pointer shrink-0 group"
-              title="فحص المجلدات المرتبطة وتحديث ملفات الفيديو أو الصوت الجديدة"
-            >
-              <RefreshCw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
-              <span>فحص مجلدات المكتبة 🔍</span>
-            </button>
-          </div>
-          <p className="text-sm sm:text-lg text-white/80 mt-1.5 sm:mt-2.5 whitespace-nowrap overflow-hidden text-ellipsis">
-            {isKidsMode ? 'عالم المحتوى الكرتوني والتعليمي الخاص بك!' : 'تصفح المحتوى المحلي الخاص بك وتصنيفاته'}
-          </p>
-        </div>
-
-        {/* Search Bar & Categories Container */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full lg:w-auto">
-          {/* Search Box */}
-          <div className="relative w-full sm:w-64 md:w-72 shrink-0">
-            <Search className="w-5 h-5 text-amber-400/70 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input 
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث عن مسلسل، حلقة، أو قائمة..."
-              className="w-full bg-black/40 border border-white/20 focus:border-amber-400 rounded-2xl pr-11 pl-10 py-2.5 text-xs sm:text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/40 transition-all backdrop-blur-md"
-            />
-            {searchQuery && (
-              <button 
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-1 rounded-full cursor-pointer"
-                title="مسح البحث"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        
-        {/* Windows Desktop Category Dropdown & Selector */}
-        <div className="relative flex items-center shrink-0 z-40">
-          {/* Main Dropdown Button */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-              className={`flex items-center gap-2.5 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl transition-all cursor-pointer shadow-xl border ${
-                isKidsMode
-                  ? 'bg-yellow-400 text-black border-yellow-300 font-black shadow-yellow-400/20'
-                  : 'bg-zinc-900/90 text-white border-amber-400/30 hover:border-amber-400/70 hover:bg-zinc-800'
-              }`}
-            >
-              {(() => {
-                const ActiveIcon = getSectionIcon(activeSection);
-                return <ActiveIcon className="w-5 h-5 text-amber-400 shrink-0" />;
-              })()}
-              <div className="flex items-center gap-2">
-                <span className="text-sm sm:text-base font-extrabold">{activeSection}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                  isKidsMode ? 'bg-black/10 text-black' : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
-                }`}>
-                  {filteredWatchlists.length}
-                </span>
               </div>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {/* Dropdown Menu Overlay */}
-            <AnimatePresence>
-              {isCategoryDropdownOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-30" 
-                    onClick={() => setIsCategoryDropdownOpen(false)} 
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute left-0 top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-2rem)] bg-zinc-950/95 border border-amber-400/40 rounded-2xl shadow-2xl backdrop-blur-xl z-40 overflow-hidden"
-                  >
-                    <div className="p-2 space-y-1 max-h-80 overflow-y-auto no-scrollbar">
-                      {allSections.map((section) => {
-                        const isSelected = activeSection === section;
-                        const isEditingThis = editingSection === section;
-                        const SectionIcon = getSectionIcon(section);
-                        const count = watchlists.filter(w => section === 'الكل' || (w.section || w.category || 'عام') === section).length;
-
-                        if (isEditingThis) {
-                          return (
-                            <form
-                              key={section}
-                              onSubmit={(e) => {
-                                handleSaveRenameSection(e);
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center justify-between gap-1.5 p-2 bg-black/90 rounded-xl border border-amber-400 my-0.5"
-                            >
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <SectionIcon className="w-4 h-4 text-amber-400 shrink-0" />
-                                <input
-                                  type="text"
-                                  value={editingSectionValue}
-                                  onChange={(e) => setEditingSectionValue(e.target.value)}
-                                  className="bg-transparent text-white px-2 py-0.5 text-xs focus:outline-none w-full font-bold border-b border-amber-400/50"
-                                  autoFocus
-                                />
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="submit"
-                                  className="p-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 cursor-pointer"
-                                  title="حفظ الاسم"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingSection(null)}
-                                  className="p-1.5 rounded-lg bg-white/10 text-white/70 hover:text-white cursor-pointer"
-                                  title="إلغاء"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </form>
-                          );
-                        }
-
-                        return (
-                          <div
-                            key={section}
-                            className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
-                              isSelected
-                                ? 'bg-amber-400 text-black font-extrabold shadow-md'
-                                : 'text-white/80 hover:bg-white/10 hover:text-white'
-                            }`}
-                          >
-                            {/* Clickable section area */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveSection(section);
-                                setIsCategoryDropdownOpen(false);
-                              }}
-                              className="flex items-center gap-2.5 flex-1 min-w-0 text-right cursor-pointer"
-                            >
-                              <SectionIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-black' : 'text-amber-400'}`} />
-                              <span className="truncate">{section}</span>
-                            </button>
-
-                            {/* Right side controls: Count, Edit, Delete, Active Check */}
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {/* Inline Edit & Delete icons for non-All categories */}
-                              {section !== 'الكل' && (
-                                <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleStartRenameSection(section, e)}
-                                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                                      isSelected 
-                                        ? 'text-black/70 hover:text-black hover:bg-black/10' 
-                                        : 'text-white/60 hover:text-amber-300 hover:bg-white/10'
-                                    }`}
-                                    title="تعديل اسم التبويب"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setDeletingSection(section);
-                                    }}
-                                    className={`p-1 rounded-lg transition-colors cursor-pointer ${
-                                      isSelected 
-                                        ? 'text-black/70 hover:text-red-800 hover:bg-black/10' 
-                                        : 'text-white/60 hover:text-red-400 hover:bg-white/10'
-                                    }`}
-                                    title="حذف التبويب"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              )}
-
-                              <span className={`text-[11px] px-2 py-0.5 rounded-full ${
-                                isSelected ? 'bg-black/20 text-black font-extrabold' : 'bg-white/10 text-white/70'
-                              }`}>
-                                {count}
-                              </span>
-                              {isSelected && <Check className="w-4 h-4 text-black stroke-[3]" />}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Add New Tab Button / Input at Bottom of Dropdown */}
-                    <div className="p-2 bg-black/40 border-t border-white/10">
-                      {isAddingHeaderCategory ? (
-                        <form 
-                          onSubmit={(e) => {
-                            handleHeaderAddCategorySubmit(e);
-                          }} 
-                          className="flex items-center gap-1.5 p-1 bg-zinc-900 rounded-xl border border-amber-400/60"
-                        >
-                          <input
-                            type="text"
-                            value={headerCategoryInput}
-                            onChange={(e) => setHeaderCategoryInput(e.target.value)}
-                            placeholder="اسم التبويب الجديد..."
-                            className="bg-transparent text-white px-2.5 py-1 text-xs focus:outline-none w-full font-bold"
-                            autoFocus
-                          />
-                          <button 
-                            type="submit" 
-                            className="text-xs px-2.5 py-1 rounded-lg bg-amber-400 text-black font-extrabold cursor-pointer shrink-0"
-                          >
-                            حفظ
-                          </button>
-                          <button 
-                            type="button" 
-                            onClick={() => setIsAddingHeaderCategory(false)} 
-                            className="text-white/60 hover:text-white p-1 cursor-pointer shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </form>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setIsAddingHeaderCategory(true)}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>إضافة تبويب جديد</span>
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
+            )}
           </div>
-        </div>
-      </div>
-    </header>
 
+          {/* Folder Scan & Sync Button (Renamed to "فحص") */}
+          <button
+            type="button"
+            onClick={handleScanLinkedFoldersForNewFiles}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/20 hover:bg-emerald-400 text-emerald-300 hover:text-black border border-emerald-400/40 font-extrabold text-xs sm:text-sm transition-all shadow-md cursor-pointer shrink-0 group"
+            title="فحص المجلدات المرتبطة وتحديث ملفات الفيديو أو الصوت الجديدة"
+          >
+            <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+            <span>فحص 🔍</span>
+          </button>
+        </div>
+
+        {/* Search Bar directly under Library name */}
+        <div className="relative w-full max-w-2xl">
+          <Search className="w-5 h-5 text-amber-400/70 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input 
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="ابحث عن مسلسل، حلقة، أو قائمة..."
+            className="w-full bg-black/50 border border-white/20 focus:border-amber-400 rounded-2xl pr-11 pl-10 py-3 text-xs sm:text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/40 transition-all backdrop-blur-md shadow-lg"
+          />
+          {searchQuery && (
+            <button 
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-1 rounded-full cursor-pointer"
+              title="مسح البحث"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <p className="text-xs sm:text-sm text-white/70 -mt-2">
+          {isKidsMode ? 'عالم المحتوى الكرتوني والتعليمي الخاص بك!' : 'تصفح المحتوى المحلي الخاص بك وتصنيفاته'}
+        </p>
+      </header>
+        
       {/* Smart Mode Switcher Ribbon Bar */}
       <div className="mb-6 bg-zinc-950/80 p-3 sm:p-4 rounded-3xl border border-amber-400/30 shadow-2xl space-y-2.5 backdrop-blur-xl">
-        <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
             <span className="text-xs sm:text-sm font-extrabold text-white/90">
@@ -1426,15 +1339,221 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsModeSelectorModalOpen(true)}
-            className="text-xs text-amber-300 hover:text-amber-200 font-bold bg-amber-500/10 hover:bg-amber-400 hover:text-black px-3 py-1 rounded-xl border border-amber-400/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
-            title="فتح استعراض الأوضاع الشامل"
-          >
-            <span>عرض كافة الأوضاع ⚡</span>
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Category Dropdown & Selector (زر الكل في آخر السيكشن على اليسار) */}
+            <div className="relative flex items-center shrink-0 z-40">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-md border text-xs sm:text-sm font-extrabold ${
+                    isKidsMode
+                      ? 'bg-yellow-400 text-black border-yellow-300 shadow-yellow-400/20'
+                      : 'bg-zinc-900/90 text-white border-amber-400/30 hover:border-amber-400/70 hover:bg-zinc-800'
+                  }`}
+                >
+                  {(() => {
+                    const ActiveIcon = getSectionIcon(activeSection);
+                    return <ActiveIcon className="w-4 h-4 text-amber-400 shrink-0" />;
+                  })()}
+                  <div className="flex items-center gap-1.5">
+                    <span>{activeSection}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isKidsMode ? 'bg-black/10 text-black' : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                    }`}>
+                      {filteredWatchlists.length}
+                    </span>
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Dropdown Menu Overlay */}
+                <AnimatePresence>
+                  {isCategoryDropdownOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-30" 
+                        onClick={() => setIsCategoryDropdownOpen(false)} 
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute left-0 top-full mt-2 w-72 sm:w-80 max-w-[calc(100vw-2rem)] bg-zinc-950/95 border border-amber-400/40 rounded-2xl shadow-2xl backdrop-blur-xl z-40 overflow-hidden"
+                      >
+                        <div className="p-2 space-y-1 max-h-80 overflow-y-auto no-scrollbar">
+                          {allSections.map((section) => {
+                            const isSelected = activeSection === section;
+                            const isEditingThis = editingSection === section;
+                            const SectionIcon = getSectionIcon(section);
+                            const count = watchlists.filter(w => section === 'الكل' || (w.section || w.category || 'عام') === section).length;
+
+                            if (isEditingThis) {
+                              return (
+                                <form
+                                  key={section}
+                                  onSubmit={(e) => {
+                                    handleSaveRenameSection(e);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="flex items-center justify-between gap-1.5 p-2 bg-black/90 rounded-xl border border-amber-400 my-0.5"
+                                >
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <SectionIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                                    <input
+                                      type="text"
+                                      value={editingSectionValue}
+                                      onChange={(e) => setEditingSectionValue(e.target.value)}
+                                      className="bg-transparent text-white px-2 py-0.5 text-xs focus:outline-none w-full font-bold border-b border-amber-400/50"
+                                      autoFocus
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="submit"
+                                      className="p-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 cursor-pointer"
+                                      title="حفظ الاسم"
+                                    >
+                                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingSection(null)}
+                                      className="p-1.5 rounded-lg bg-white/10 text-white/70 hover:text-white cursor-pointer"
+                                      title="إلغاء"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </form>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={section}
+                                className={`group w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                                  isSelected
+                                    ? 'bg-amber-400 text-black font-extrabold shadow-md'
+                                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveSection(section);
+                                    setIsCategoryDropdownOpen(false);
+                                  }}
+                                  className="flex items-center gap-2.5 flex-1 min-w-0 text-right cursor-pointer"
+                                >
+                                  <SectionIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-black' : 'text-amber-400'}`} />
+                                  <span className="truncate">{section}</span>
+                                </button>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {section !== 'الكل' && (
+                                    <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleStartRenameSection(section, e)}
+                                        className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                          isSelected 
+                                            ? 'text-black/70 hover:text-black hover:bg-black/10' 
+                                            : 'text-white/60 hover:text-amber-300 hover:bg-white/10'
+                                        }`}
+                                        title="تعديل اسم التبويب"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setDeletingSection(section);
+                                        }}
+                                        className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                          isSelected 
+                                            ? 'text-black/70 hover:text-red-800 hover:bg-black/10' 
+                                            : 'text-white/60 hover:text-red-400 hover:bg-white/10'
+                                        }`}
+                                        title="حذف التبويب"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                                    isSelected ? 'bg-black/20 text-black font-extrabold' : 'bg-white/10 text-white/70'
+                                  }`}>
+                                    {count}
+                                  </span>
+                                  {isSelected && <Check className="w-4 h-4 text-black stroke-[3]" />}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="p-2 bg-black/40 border-t border-white/10">
+                          {isAddingHeaderCategory ? (
+                            <form 
+                              onSubmit={(e) => {
+                                handleHeaderAddCategorySubmit(e);
+                              }} 
+                              className="flex items-center gap-1.5 p-1 bg-zinc-900 rounded-xl border border-amber-400/60"
+                            >
+                              <input
+                                type="text"
+                                value={headerCategoryInput}
+                                onChange={(e) => setHeaderCategoryInput(e.target.value)}
+                                placeholder="اسم التبويب الجديد..."
+                                className="bg-transparent text-white px-2.5 py-1 text-xs focus:outline-none w-full font-bold"
+                                autoFocus
+                              />
+                              <button 
+                                type="submit" 
+                                className="text-xs px-2.5 py-1 rounded-lg bg-amber-400 text-black font-extrabold cursor-pointer shrink-0"
+                              >
+                                حفظ
+                              </button>
+                              <button 
+                                type="button" 
+                                onClick={() => setIsAddingHeaderCategory(false)} 
+                                className="text-white/60 hover:text-white p-1 cursor-pointer shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsAddingHeaderCategory(true)}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-200 bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 transition-all cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>إضافة تبويب جديد</span>
+                            </button>
+                          )}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsModeSelectorModalOpen(true)}
+              className="text-xs text-amber-300 hover:text-amber-200 font-bold bg-amber-500/10 hover:bg-amber-400 hover:text-black px-3 py-1.5 rounded-xl border border-amber-400/30 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+              title="فتح استعراض الأوضاع الشامل"
+            >
+              <span>عرض كافة الأوضاع ⚡</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 touch-pan-x">
@@ -1797,202 +1916,372 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           )}
         </div>
       ) : (
-        /* Watchlists Cards Grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8 pb-32 md:pb-20">
-        {/* Dedicated "Add Watchlist Card" inside this tab */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          onClick={() => openCreateModal(activeSection)}
-          className={`glass-card rounded-[2rem] p-6 sm:p-8 min-h-[380px] sm:min-h-[420px] h-full flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed ${
-            isKidsMode 
-              ? 'border-yellow-400/40 hover:border-yellow-400 bg-yellow-400/5 hover:bg-yellow-400/10' 
-              : 'border-white/20 hover:border-white/50 bg-white/5 hover:bg-white/10'
-          } transition-all group relative overflow-hidden`}
-        >
-          <div className={`p-4 sm:p-5 rounded-full mb-4 ${
-            isKidsMode ? 'bg-yellow-400 text-black' : 'bg-white/10 text-white group-hover:bg-white group-hover:text-black'
-          } transition-all duration-300 group-hover:scale-110 shadow-lg`}>
-            <FolderPlus className="w-8 h-8 sm:w-10 sm:h-10" />
-          </div>
-          <h3 className="text-xl sm:text-2xl font-bold mb-3">إضافة قائمة تشغيل</h3>
-          <p className="text-xs sm:text-sm text-white/70 max-w-xs leading-relaxed mb-1 font-medium">
-            كل قائمة تشغيل تمثل مسلسلاً أو برنامجاً واحداً.
-          </p>
-          <p className="text-[11px] sm:text-xs text-white/50 max-w-xs leading-relaxed">
-            {activeSection === 'الكل'
-              ? 'اضغط هنا لربط مجلد مسلسل من جهازك'
-              : `اضغط لربط مجلد مسلسل مباشرة إلى "${activeSection}"`}
-          </p>
-          <span className={`mt-4 sm:mt-6 px-5 py-2 rounded-xl text-xs font-bold shadow-md ${
-            isKidsMode ? 'bg-yellow-400/20 text-yellow-300' : 'bg-indigo-500/20 text-indigo-300'
-          }`}>
-            + اختيار مجلد المسلسل
-          </span>
-        </motion.div>
+        /* Watchlists & Standalone Files Cards Grid */
+        <div className="space-y-6">
+          {searchQuery.trim() === '' && (
+            <div className="flex items-center justify-between flex-wrap gap-3 bg-zinc-950/80 p-3.5 rounded-2xl border border-white/10 backdrop-blur-md">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-white/60 ml-2">تصفية نوع المحتوى:</span>
+                <button
+                  type="button"
+                  onClick={() => setLibraryTypeFilter('all')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center gap-2 ${
+                    libraryTypeFilter === 'all'
+                      ? 'bg-amber-400 text-black shadow-lg shadow-amber-500/20 scale-105'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <span>كافة المحتويات</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/20 font-black">{totalModeCount}</span>
+                </button>
 
-        {/* Empty Search State */}
-        {filteredWatchlists.length === 0 && searchQuery && (
-          <div className="col-span-full py-16 text-center glass rounded-[2.5rem] border border-white/10 p-8 space-y-4 my-4">
-            <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto border border-amber-400/30">
-              <Search className="w-8 h-8" />
+                <button
+                  type="button"
+                  onClick={() => setLibraryTypeFilter('playlists')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center gap-2 ${
+                    libraryTypeFilter === 'playlists'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 scale-105 border border-indigo-400'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <List className="w-4 h-4 text-indigo-300" />
+                  <span>قوائم التشغيل 📺</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/30 text-indigo-200 font-black">{totalPlaylistsCount}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setLibraryTypeFilter('singles')}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center gap-2 ${
+                    libraryTypeFilter === 'singles'
+                      ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-black shadow-lg shadow-amber-400/30 scale-105 border border-amber-300'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <Film className="w-4 h-4 text-amber-950 fill-amber-950" />
+                  <span>ملفات فيديو مفردة 🎬</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-black/30 text-amber-950 font-black">{totalSinglesCount}</span>
+                </button>
+              </div>
+
+              <div className="text-xs text-amber-300/80 font-semibold px-2">
+                {libraryTypeFilter === 'singles' && 'تُعرض هنا مقاطع الفيديو المستقلة المميزة عن قوائم التشغيل'}
+                {libraryTypeFilter === 'playlists' && 'تُعرض هنا المجلدات وقوائم التشغيل التي تحتوي حلقات متعددة'}
+              </div>
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-white">لا توجد نتائج بحث مطابقة</h3>
-            <p className="text-sm text-white/70 max-w-md mx-auto">
-              لم نجد أي قائمة تشغيل أو مسلسل يطابق البحث عن "<span className="text-amber-300 font-bold">{searchQuery}</span>"
-            </p>
-            <button 
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="px-6 py-2.5 rounded-2xl bg-amber-400 text-black font-extrabold text-sm hover:scale-105 transition-transform cursor-pointer shadow-lg"
-            >
-              مسح البحث لعرض كافة القوائم
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* Watchlists items */}
-        {filteredWatchlists.map((list, i) => (
-          <motion.div 
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8 pb-32 md:pb-20">
+          {/* Dedicated "Add Watchlist Card" inside this tab */}
+          <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.05 }}
-            key={list.id} 
-            onClick={() => handleCardClick(list)}
-            className={`glass-card rounded-[2rem] overflow-hidden group flex flex-col cursor-pointer hover:ring-2 hover:ring-white/30 transition-all min-h-[380px] sm:min-h-[420px] h-full ${
-              isKidsMode ? 'hover:scale-105 transition-transform border-yellow-300/30' : ''
-            }`}
+            onClick={() => openCreateModal(activeSection)}
+            className={`glass-card rounded-[2rem] p-6 sm:p-8 min-h-[380px] sm:min-h-[420px] h-full flex flex-col items-center justify-center text-center cursor-pointer border-2 border-dashed ${
+              isKidsMode 
+                ? 'border-yellow-400/40 hover:border-yellow-400 bg-yellow-400/5 hover:bg-yellow-400/10' 
+                : 'border-white/20 hover:border-white/50 bg-white/5 hover:bg-white/10'
+            } transition-all group relative overflow-hidden`}
           >
-            <div className="relative h-52 sm:h-60 w-full overflow-hidden">
-              <img src={getWatchlistCover(list)} alt={list.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-              
-              {/* Top overlay buttons for Edit & Delete - Always visible on mobile, hover on desktop */}
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
-                <button 
-                  onClick={(e) => handleStartEditWatchlist(e, list)}
-                  className="p-2 glass bg-black/60 text-white/90 hover:text-white rounded-full transition-colors hover:bg-black/90 shadow-md border border-white/20"
-                  title="تعديل قائمة التشغيل"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeletingWatchlist(list);
-                  }}
-                  className="p-2 glass bg-red-500/40 text-red-200 hover:text-white hover:bg-red-500 rounded-full transition-colors shadow-md border border-red-500/50"
-                  title="حذف قائمة التشغيل"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {list.seasons && list.seasons.length > 0 && (
-                <span className="absolute top-4 left-4 bg-sky-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-md">
-                  {list.seasons.length} مواسم
-                </span>
-              )}
-
-              <div className="absolute bottom-4 right-4 left-4">
-                <h3 className="text-2xl font-bold text-white shadow-sm">{list.title}</h3>
-                <p className="text-white/80 text-sm mt-1">
-                  {(() => {
-                    const seasonsNum = (list.seasons && list.seasons.length > 0) ? list.seasons.length : (list.seriesCount || 1);
-                    return `${seasonsNum} ${seasonsNum === 1 ? 'موسم' : 'مواسم'}`;
-                  })()} • {list.episodesCount} حلقة
-                </p>
-              </div>
-
-              {/* Hover Actions */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-sm">
-                <button 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    const filesList = list.seasons && list.seasons.length > 0 
-                      ? list.seasons.flatMap(s => s.files || []) 
-                      : list.files || [];
-                    const startIdx = list.lastWatchedIndex || 0;
-                    const targetFile = filesList[startIdx] || filesList[0];
-                    const targetTitle = targetFile?.title || targetFile?.name?.replace(/\.[^/.]+$/, "") || `الحلقة ${startIdx + 1}`;
-                    onPlay(targetFile, targetTitle, list.title, filesList, startIdx, undefined, list.id, list.lastWatchedTime || 0); 
-                  }} 
-                  className="p-4 bg-white text-black rounded-full hover:scale-110 transition-transform shadow-xl flex items-center gap-2 px-6 font-bold"
-                  title={list.lastWatchedIndex && list.lastWatchedIndex > 0 ? `متابعة من الحلقة ${list.lastWatchedIndex + 1}` : 'تشغيل القائمة'}
-                >
-                  <Play className="w-6 h-6 fill-black" />
-                  <span>{list.lastWatchedIndex && list.lastWatchedIndex > 0 ? 'متابعة' : 'تشغيل'}</span>
-                </button>
-              </div>
+            <div className={`p-4 sm:p-5 rounded-full mb-4 ${
+              isKidsMode ? 'bg-yellow-400 text-black' : 'bg-white/10 text-white group-hover:bg-white group-hover:text-black'
+            } transition-all duration-300 group-hover:scale-110 shadow-lg`}>
+              <FolderPlus className="w-8 h-8 sm:w-10 sm:h-10" />
             </div>
-
-            <div className="p-6 flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-center mb-2 text-sm text-white/60">
-                  <span>التصنيف:</span>
-                  <span className="text-white font-medium">{list.section}</span>
-                </div>
-                
-                {/* Progress bar */}
-                <div className="w-full bg-white/10 rounded-full h-2 mb-2 overflow-hidden">
-                  <div className={`h-full rounded-full ${isKidsMode ? 'bg-yellow-400' : 'bg-white'}`} style={{ width: `${list.progress}%` }} />
-                </div>
-                <div className="flex justify-between text-xs text-white/50">
-                  <span>{list.progress}% مكتمل</span>
-                  <span>المتبقي: {list.timeRemaining}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2 mt-6">
-                {(() => {
-                  const filesList = list.seasons && list.seasons.length > 0 
-                    ? list.seasons.flatMap(s => s.files || []) 
-                    : list.files || [];
-                  const startIdx = list.lastWatchedIndex || 0;
-                  const hasProgress = (list.lastWatchedIndex && list.lastWatchedIndex > 0) || (list.lastWatchedTime && list.lastWatchedTime > 0);
-                  const targetFile = filesList[startIdx] || filesList[0];
-                  const targetTitle = targetFile?.title || targetFile?.name?.replace(/\.[^/.]+$/, "") || `الحلقة ${startIdx + 1}`;
-
-                  return (
-                    <>
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          if (hasProgress) {
-                            onPlay(targetFile, targetTitle, list.title, filesList, startIdx, undefined, list.id, list.lastWatchedTime || 0);
-                          } else {
-                            const firstFile = filesList[0];
-                            const firstTitle = firstFile?.title || firstFile?.name?.replace(/\.[^/.]+$/, "") || "الحلقة 1";
-                            onPlay(firstFile, firstTitle, list.title, filesList, 0, undefined, list.id, 0);
-                          }
-                        }} 
-                        className={`flex-1 glass py-2 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
-                          isKidsMode ? 'bg-yellow-400/20 text-yellow-200 hover:bg-yellow-400 hover:text-black' : 'hover:bg-white hover:text-black'
-                        }`}
-                      >
-                        <Play className="w-4 h-4" /> {hasProgress ? 'متابعة' : 'تشغيل'}
-                      </button>
-
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          const firstFile = filesList[0];
-                          const firstTitle = firstFile?.title || firstFile?.name?.replace(/\.[^/.]+$/, "") || "الحلقة 1";
-                          onPlay(firstFile, firstTitle, list.title, filesList, 0, undefined, list.id, 0);
-                        }}
-                        className="glass p-2.5 rounded-xl hover:bg-white/20 transition-colors" 
-                        title="بدء من البداية"
-                      >
-                        <RotateCcw className="w-5 h-5 text-white/80" />
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
+            <h3 className="text-xl sm:text-2xl font-bold mb-3">إضافة قائمة تشغيل</h3>
+            <p className="text-xs sm:text-sm text-white/70 max-w-xs leading-relaxed mb-1 font-medium">
+              كل قائمة تشغيل تمثل مسلسلاً أو برنامجاً واحداً.
+            </p>
+            <p className="text-[11px] sm:text-xs text-white/50 max-w-xs leading-relaxed">
+              {activeSection === 'الكل'
+                ? 'اضغط هنا لربط مجلد مسلسل من جهازك'
+                : `اضغط لربط مجلد مسلسل مباشرة إلى "${activeSection}"`}
+            </p>
+            <span className={`mt-4 sm:mt-6 px-5 py-2 rounded-xl text-xs font-bold shadow-md ${
+              isKidsMode ? 'bg-yellow-400/20 text-yellow-300' : 'bg-indigo-500/20 text-indigo-300'
+            }`}>
+              + اختيار مجلد المسلسل
+            </span>
           </motion.div>
-        ))}
-      </div>
+
+          {/* Empty Search State */}
+          {filteredWatchlists.length === 0 && searchQuery && (
+            <div className="col-span-full py-16 text-center glass rounded-[2.5rem] border border-white/10 p-8 space-y-4 my-4">
+              <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto border border-amber-400/30">
+                <Search className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold text-white">لا توجد نتائج بحث مطابقة</h3>
+              <p className="text-sm text-white/70 max-w-md mx-auto">
+                لم نجد أي قائمة تشغيل أو مسلسل يطابق البحث عن "<span className="text-amber-300 font-bold">{searchQuery}</span>"
+              </p>
+              <button 
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="px-6 py-2.5 rounded-2xl bg-amber-400 text-black font-extrabold text-sm hover:scale-105 transition-transform cursor-pointer shadow-lg"
+              >
+                مسح البحث لعرض كافة القوائم
+              </button>
+            </div>
+          )}
+
+          {/* Watchlists & Standalone Single Video Cards */}
+          {sortedWatchlists.map((list, i) => {
+            const isSingle = (list.isSingleFile === true) || (list.episodesCount === 1) || (list.files?.length === 1 && (!list.seasons || list.seasons.length === 0));
+            const firstFile = (list.files && list.files[0]) || (list.seasons && list.seasons[0]?.files?.[0]);
+            const extName = (firstFile?.name || list.title || '').split('.').pop()?.toUpperCase() || 'MP4';
+
+            if (isSingle) {
+              // Compact, Innovative Card Design for Single Video Files
+              return (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: i * 0.04 }}
+                  key={list.id} 
+                  onClick={() => handleCardClick(list)}
+                  className="rounded-2xl overflow-hidden group flex flex-col cursor-pointer transition-all min-h-[250px] sm:min-h-[280px] h-full relative bg-gradient-to-b from-amber-950/30 via-zinc-950/90 to-black border border-amber-400/40 hover:border-amber-400 shadow-[0_8px_25px_rgba(245,158,11,0.15)] hover:shadow-[0_15px_35px_rgba(245,158,11,0.3)] hover:scale-[1.02]"
+                >
+                  <div className="relative h-36 sm:h-40 w-full overflow-hidden bg-black shrink-0">
+                    <img src={getWatchlistCover(list)} alt={list.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
+
+                    {/* Edit & Delete Actions */}
+                    <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                      <button 
+                        onClick={(e) => handleStartEditWatchlist(e, list)}
+                        className="p-1.5 glass bg-black/70 text-white/90 hover:text-white rounded-full transition-colors hover:bg-black border border-white/20"
+                        title="تعديل"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingWatchlist(list);
+                        }}
+                        className="p-1.5 glass bg-red-500/40 text-red-200 hover:text-white hover:bg-red-500 rounded-full transition-colors border border-red-500/50"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* File Format & Single Badge */}
+                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
+                      <span className="bg-gradient-to-r from-amber-400 to-yellow-500 text-black font-black px-2.5 py-1 rounded-full text-[10px] shadow-md border border-amber-300 flex items-center gap-1">
+                        <Film className="w-3 h-3 fill-black text-black" />
+                        <span>فيديو مفرد</span>
+                      </span>
+                      <span className="bg-black/70 backdrop-blur-md text-amber-300 font-mono text-[10px] px-2 py-1 rounded-full border border-amber-400/30 font-bold">
+                        {extName}
+                      </span>
+                    </div>
+
+                    {/* Center Play Button Overlay */}
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                      <div className="w-11 h-11 bg-amber-400 text-black rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                        <Play className="w-5 h-5 fill-black translate-x-[1px]" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 flex-1 flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-white truncate group-hover:text-amber-300 transition-colors" title={list.title}>
+                        {list.title}
+                      </h3>
+                      <p className="text-[11px] text-white/50 mt-0.5 truncate">
+                        {list.section}
+                      </p>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="w-full bg-white/10 rounded-full h-1.5 mb-2 overflow-hidden">
+                        <div className="h-full rounded-full bg-amber-400" style={{ width: `${list.progress}%` }} />
+                      </div>
+                      <div className="flex justify-between items-center text-[10px] text-white/60">
+                        <span>{list.progress}% مكتمل</span>
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const filesList = list.seasons && list.seasons.length > 0 ? list.seasons.flatMap(s => s.files || []) : list.files || [];
+                            const startIdx = list.lastWatchedIndex || 0;
+                            const targetFile = filesList[startIdx] || filesList[0];
+                            const targetTitle = targetFile?.title || targetFile?.name?.replace(/\.[^/.]+$/, "") || list.title;
+                            onPlay(targetFile, targetTitle, list.title, filesList, startIdx, undefined, list.id, list.lastWatchedTime || 0);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black font-extrabold transition-all cursor-pointer border border-amber-400/30 flex items-center gap-1"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>تشغيل</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            }
+
+            return (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: i * 0.05 }}
+                key={list.id} 
+                onClick={() => handleCardClick(list)}
+                className="rounded-[2rem] overflow-hidden group flex flex-col cursor-pointer transition-all min-h-[380px] sm:min-h-[420px] h-full relative glass-card border border-indigo-500/30 hover:border-indigo-400 hover:ring-2 hover:ring-indigo-400/40"
+              >
+                <div className="relative h-52 sm:h-60 w-full overflow-hidden bg-black">
+                  <img src={getWatchlistCover(list)} alt={list.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+                  
+                  {/* Top overlay buttons for Edit & Delete */}
+                  <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+                    <button 
+                      onClick={(e) => handleStartEditWatchlist(e, list)}
+                      className="p-2 glass bg-black/60 text-white/90 hover:text-white rounded-full transition-colors hover:bg-black/90 shadow-md border border-white/20"
+                      title="تعديل قائمة التشغيل"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingWatchlist(list);
+                      }}
+                      className="p-2 glass bg-red-500/40 text-red-200 hover:text-white hover:bg-red-500 rounded-full transition-colors shadow-md border border-red-500/50"
+                      title="حذف قائمة التشغيل"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Card Type Distinction Badge: Single File vs Playlist */}
+                  {isSingle ? (
+                    <span className="absolute top-4 left-4 bg-gradient-to-r from-amber-400 to-yellow-500 text-black font-black px-3.5 py-1.5 rounded-full text-xs shadow-xl border border-amber-300 flex items-center gap-1.5 z-10">
+                      <Film className="w-4 h-4 fill-black text-black" />
+                      <span>ملف فيديو مفرد 🎬</span>
+                    </span>
+                  ) : (
+                    <span className="absolute top-4 left-4 bg-indigo-600/90 backdrop-blur-md text-white font-extrabold px-3.5 py-1.5 rounded-full text-xs shadow-xl border border-indigo-400/50 flex items-center gap-1.5 z-10">
+                      <List className="w-4 h-4 text-indigo-200" />
+                      <span>قائمة تشغيل 📺</span>
+                    </span>
+                  )}
+
+                  <div className="absolute bottom-4 right-4 left-4">
+                    <h3 className="text-xl sm:text-2xl font-black text-white shadow-sm truncate">{list.title}</h3>
+                    {isSingle ? (
+                      <p className="text-amber-300 text-xs font-bold mt-1 flex items-center gap-1.5">
+                        <span className="bg-amber-400 text-black px-1.5 py-0.5 rounded text-[10px] font-black">{extName}</span>
+                        <span>ملف فيديو مستقل</span>
+                      </p>
+                    ) : (
+                      <p className="text-white/80 text-sm mt-1">
+                        {(() => {
+                          const seasonsNum = (list.seasons && list.seasons.length > 0) ? list.seasons.length : (list.seriesCount || 1);
+                          return `${seasonsNum} ${seasonsNum === 1 ? 'موسم' : 'مواسم'}`;
+                        })()} • {list.episodesCount} حلقة
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Hover Actions */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-sm">
+                    <button 
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        const filesList = list.seasons && list.seasons.length > 0 
+                          ? list.seasons.flatMap(s => s.files || []) 
+                          : list.files || [];
+                        const startIdx = list.lastWatchedIndex || 0;
+                        const targetFile = filesList[startIdx] || filesList[0];
+                        const targetTitle = targetFile?.title || targetFile?.name?.replace(/\.[^/.]+$/, "") || list.title;
+                        onPlay(targetFile, targetTitle, list.title, filesList, startIdx, undefined, list.id, list.lastWatchedTime || 0); 
+                      }} 
+                      className="p-4 bg-amber-400 text-black rounded-full hover:scale-110 transition-transform shadow-xl flex items-center gap-2 px-6 font-black"
+                      title={isSingle ? 'تشغيل الفيديو' : (list.lastWatchedIndex && list.lastWatchedIndex > 0 ? `متابعة من الحلقة ${list.lastWatchedIndex + 1}` : 'تشغيل القائمة')}
+                    >
+                      <Play className="w-6 h-6 fill-black" />
+                      <span>{isSingle ? 'تشغيل' : (list.lastWatchedIndex && list.lastWatchedIndex > 0 ? 'متابعة' : 'تشغيل')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="flex justify-between items-center mb-2 text-sm text-white/60">
+                      <span>التصنيف:</span>
+                      <span className="text-white font-medium">{list.section}</span>
+                    </div>
+                    
+                    {/* Progress bar */}
+                    <div className="w-full bg-white/10 rounded-full h-2 mb-2 overflow-hidden">
+                      <div className={`h-full rounded-full ${isSingle ? 'bg-amber-400' : (isKidsMode ? 'bg-yellow-400' : 'bg-indigo-400')}`} style={{ width: `${list.progress}%` }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-white/50">
+                      <span>{list.progress}% مكتمل</span>
+                      <span>{isSingle ? 'فيديو مفرد 🎬' : `المتبقي: ${list.timeRemaining}`}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-6">
+                    {(() => {
+                      const filesList = list.seasons && list.seasons.length > 0 
+                        ? list.seasons.flatMap(s => s.files || []) 
+                        : list.files || [];
+                      const startIdx = list.lastWatchedIndex || 0;
+                      const hasProgress = (list.lastWatchedIndex && list.lastWatchedIndex > 0) || (list.lastWatchedTime && list.lastWatchedTime > 0);
+                      const targetFile = filesList[startIdx] || filesList[0];
+                      const targetTitle = targetFile?.title || targetFile?.name?.replace(/\.[^/.]+$/, "") || list.title;
+
+                      return (
+                        <>
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              if (hasProgress) {
+                                onPlay(targetFile, targetTitle, list.title, filesList, startIdx, undefined, list.id, list.lastWatchedTime || 0);
+                              } else {
+                                const firstFile = filesList[0];
+                                const firstTitle = firstFile?.title || firstFile?.name?.replace(/\.[^/.]+$/, "") || list.title;
+                                onPlay(firstFile, firstTitle, list.title, filesList, 0, undefined, list.id, 0);
+                              }
+                            }} 
+                            className={`flex-1 glass py-2 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+                              isSingle
+                                ? 'bg-amber-400/20 text-amber-300 hover:bg-amber-400 hover:text-black border border-amber-400/40'
+                                : (isKidsMode ? 'bg-yellow-400/20 text-yellow-200 hover:bg-yellow-400 hover:text-black' : 'hover:bg-white hover:text-black')
+                            }`}
+                          >
+                            <Play className="w-4 h-4 fill-current" /> {isSingle ? 'تشغيل' : (hasProgress ? 'متابعة' : 'تشغيل')}
+                          </button>
+
+                          {!isSingle && (
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                const firstFile = filesList[0];
+                                const firstTitle = firstFile?.title || firstFile?.name?.replace(/\.[^/.]+$/, "") || "الحلقة 1";
+                                onPlay(firstFile, firstTitle, list.title, filesList, 0, undefined, list.id, 0);
+                              }}
+                              className="glass p-2.5 rounded-xl hover:bg-white/20 transition-colors" 
+                              title="بدء من البداية"
+                            >
+                              <RotateCcw className="w-5 h-5 text-white/80" />
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+          </div>
+        </div>
       )}
 
       <WatchlistDetailsView 

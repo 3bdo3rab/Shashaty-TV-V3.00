@@ -16,7 +16,7 @@ export const THEMATIC_IMAGES = {
     'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&q=80&w=800', // Movie Screen
   ],
   series: [
-    'https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?auto=format&fit=crop&q=80&w=800', // Television Drama
+    'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?auto=format&fit=crop&q=80&w=800', // Cinema Projector
     'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&q=80&w=800', // TV Broadcast
     'https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&q=80&w=800', // Film Roll
   ],
@@ -26,12 +26,13 @@ export const THEMATIC_IMAGES = {
     'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&q=80&w=800', // Earth Space
   ],
   quran: [
+    'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?auto=format&fit=crop&q=80&w=800', // Holy Quran Book
     'https://images.unsplash.com/photo-1542810634-71277d95dcbb?auto=format&fit=crop&q=80&w=800', // Islamic Lantern
-    'https://images.unsplash.com/photo-1609599006353-e629aaabfeae?auto=format&fit=crop&q=80&w=800', // Quran Book
     'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&q=80&w=800', // Mosque Architecture
+    'https://images.unsplash.com/photo-1584551246679-0daf3d275d0f?auto=format&fit=crop&q=80&w=800', // Quran & Tasbih
   ],
   general: [
-    'https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?auto=format&fit=crop&q=80&w=800',
+    'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?auto=format&fit=crop&q=80&w=800',
     'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&q=80&w=800',
     'https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?auto=format&fit=crop&q=80&w=800',
   ]
@@ -62,19 +63,55 @@ function pickFromList(list: string[], seedText: string): string {
 export function generateVideoCardPoster(title: string, fileName?: string): string {
   const cleanTitle = (fileName || title || 'فيديو').replace(/\.[^/.]+$/, "");
   const displayTitle = cleanTitle.length > 32 ? cleanTitle.substring(0, 30) + '...' : cleanTitle;
+  const ext = (fileName || title || '').split('.').pop()?.toUpperCase() || 'MP4';
+  const displayExt = ['MP4', 'MKV', 'WEBM', 'AVI', 'MOV', 'TS', 'M4V', 'FLV', 'WMV'].includes(ext) ? ext : 'VIDEO';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
     <defs>
-      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#0f172a"/>
+      <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#090d16"/>
         <stop offset="50%" stop-color="#1e1b4b"/>
         <stop offset="100%" stop-color="#020617"/>
       </linearGradient>
+      <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.8"/>
+        <stop offset="100%" stop-color="#d97706" stop-opacity="0.2"/>
+      </linearGradient>
     </defs>
-    <rect width="640" height="360" fill="url(#g)"/>
-    <circle cx="320" cy="150" r="42" fill="rgba(255,255,255,0.12)" stroke="rgba(251,191,36,0.6)" stroke-width="2"/>
-    <polygon points="312,134 338,150 312,166" fill="#fbbf24"/>
-    <text x="320" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="bold" fill="#ffffff" text-anchor="middle">${displayTitle}</text>
-    <text x="320" y="272" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">مقابل من ملفات الفيديو المحلية 🎬</text>
+    <rect width="640" height="360" fill="url(#bg)"/>
+    <rect x="0" y="0" width="640" height="12" fill="#020617"/>
+    <rect x="0" y="348" width="640" height="12" fill="#020617"/>
+    <!-- Simulated Film Strip Holes -->
+    <rect x="20" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="60" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="100" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="140" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="180" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="220" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="260" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="300" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="340" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="380" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="420" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="460" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="500" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="540" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="580" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    <rect x="620" y="3" width="12" height="6" rx="1.5" fill="#475569"/>
+    
+    <!-- Video Preview Card Frame -->
+    <rect x="18" y="24" width="604" height="312" rx="16" fill="none" stroke="rgba(245, 158, 11, 0.4)" stroke-width="2"/>
+    
+    <!-- Central Play Icon -->
+    <circle cx="320" cy="145" r="44" fill="rgba(15, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="3"/>
+    <polygon points="312,127 340,145 312,163" fill="#f59e0b"/>
+    
+    <!-- Video Format Badge -->
+    <rect x="32" y="38" width="64" height="24" rx="6" fill="#f59e0b"/>
+    <text x="64" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="900" fill="#000000" text-anchor="middle">${displayExt}</text>
+
+    <!-- Title & Windows Thumbnail Tag -->
+    <text x="320" y="235" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold" fill="#ffffff" text-anchor="middle">${displayTitle}</text>
+    <text x="320" y="270" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" fill="#fbbf24" text-anchor="middle">معاينة فيديو ويندوز 🎬</text>
   </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
@@ -140,35 +177,25 @@ export function getEpisodeInspiredCover(title: string = '', section: string = ''
 }
 
 /**
- * Gets the best video-inspired cover for any watchlist object
+ * Gets the cover image for a watchlist object.
+ * Returns the watchlist's coverImage if available, or selects an arbitrary video frame/cover from playlist files.
  */
 export function getWatchlistCover(list: { title?: string; section?: string; coverImage?: string; files?: any[]; seasons?: any[]; targetMode?: string }): string {
+  if (!list) return '';
+  
+  if (list.coverImage && list.coverImage.trim()) {
+    return list.coverImage;
+  }
+
   const allFiles = [...(list.files || []), ...(list.seasons?.flatMap(s => s.files || []) || [])];
   
-  // 1. If list.coverImage is a custom data URL or blob URL or extracted frame, use it!
-  if (list.coverImage && (list.coverImage.startsWith('data:') || list.coverImage.startsWith('blob:'))) {
-    return list.coverImage;
-  }
-
-  // 2. If any video file in the playlist already has an extracted frame or image, use it directly!
   const fileWithCover = allFiles.find(f => f && (f.coverImage || f.thumbnail || f.poster));
   if (fileWithCover) {
-    return fileWithCover.coverImage || fileWithCover.thumbnail || fileWithCover.poster;
+    const frame = fileWithCover.coverImage || fileWithCover.thumbnail || fileWithCover.poster;
+    if (frame) return frame;
   }
 
-  // 3. Generate a video poster derived from the first video file name
-  const firstFile = allFiles[0];
-  const firstFileName = typeof firstFile === 'string' ? firstFile : (firstFile?.name || firstFile?.title || '');
-  if (firstFileName) {
-    return generateVideoCardPoster(list.title || 'قائمة التشغيل', firstFileName);
-  }
-
-  // 4. Fallback to HTTP list cover or derive episode-inspired cover based on video titles
-  if (list.coverImage && list.coverImage.startsWith('http') && allFiles.length === 0) {
-    return list.coverImage;
-  }
-
-  return getEpisodeInspiredCover(list.title || '', list.section || '', allFiles, list.targetMode);
+  return getEpisodeInspiredCover(list.title || 'قائمة التشغيل', list.section || 'عام', allFiles, list.targetMode);
 }
 
 /**
@@ -182,10 +209,26 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
         return;
       }
 
+      // 1. If pre-existing data or blob cover exists, return it
+      if (fileInput.coverImage && (fileInput.coverImage.startsWith('data:') || fileInput.coverImage.startsWith('blob:'))) {
+        resolve(fileInput.coverImage);
+        return;
+      }
+      if (fileInput.thumbnail && (fileInput.thumbnail.startsWith('data:') || fileInput.thumbnail.startsWith('blob:'))) {
+        resolve(fileInput.thumbnail);
+        return;
+      }
+      if (fileInput.poster && (fileInput.poster.startsWith('data:') || fileInput.poster.startsWith('blob:'))) {
+        resolve(fileInput.poster);
+        return;
+      }
+
       let targetFile: any = fileInput;
       if (fileInput.rawFile) targetFile = fileInput.rawFile;
       else if (fileInput.originalFile) targetFile = fileInput.originalFile;
       else if (fileInput.file) targetFile = fileInput.file;
+
+      const fallbackPoster = generateVideoCardPoster(targetFile?.name || targetFile?.title || fileInput?.name || fileInput?.title || 'فيديو');
 
       let srcUrl = '';
       let isCreatedUrl = false;
@@ -202,7 +245,7 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
       }
 
       if (!srcUrl) {
-        resolve('');
+        resolve(fallbackPoster);
         return;
       }
 
@@ -230,7 +273,7 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             if (dataUrl && dataUrl.length > 100) {
               resolved = true;
               cleanup();
@@ -256,7 +299,7 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
         if (!captureFrame()) {
           resolved = true;
           cleanup();
-          resolve('');
+          resolve(fallbackPoster);
         }
       };
 
@@ -270,7 +313,7 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
         if (!resolved) {
           resolved = true;
           cleanup();
-          resolve('');
+          resolve(fallbackPoster);
         }
       };
 
@@ -279,14 +322,14 @@ export async function extractVideoFrameThumbnail(fileInput: any): Promise<string
           if (!captureFrame()) {
             resolved = true;
             cleanup();
-            resolve('');
+            resolve(fallbackPoster);
           }
         }
       }, 4000);
 
       video.src = srcUrl;
     } catch {
-      resolve('');
+      resolve(generateVideoCardPoster(fileInput?.name || fileInput?.title || 'فيديو'));
     }
   });
 }

@@ -1,5 +1,6 @@
 import { ViewState } from '../types';
-import { Home, Library, PlusSquare, PlaySquare, Settings, Tv, Calendar } from 'lucide-react';
+import { Home, Library, PlusSquare, PlaySquare, Settings, Tv, Calendar, LogOut } from 'lucide-react';
+import { closeWindow } from '../utils/tauri';
 
 interface SidebarProps {
   currentView: ViewState;
@@ -9,7 +10,7 @@ interface SidebarProps {
 export default function Sidebar({ currentView, setCurrentView }: SidebarProps) {
   const navItems = [
     { id: 'home', icon: Home, label: 'الرئيسية' },
-    { id: 'channels', icon: Tv, label: 'القنوات' },
+    { id: 'channels', icon: Tv, label: 'القنوات والراديو' },
     { id: 'schedule', icon: Calendar, label: 'الجدول الأسبوعي' },
     { id: 'library', icon: Library, label: 'المكتبة' },
     { id: 'sessions', icon: PlaySquare, label: 'الجلسات الذكية' },
@@ -57,6 +58,22 @@ export default function Sidebar({ currentView, setCurrentView }: SidebarProps) {
             </button>
           );
         })}
+      </div>
+
+      {/* Exit Button at Bottom of Right Sidebar */}
+      <div className="w-full px-2 md:px-3 pt-3 mt-auto border-t border-white/10 shrink-0">
+        <button
+          onClick={() => closeWindow()}
+          className="flex flex-row items-center gap-3 p-2 md:p-2.5 rounded-2xl transition-all duration-200 relative w-full justify-center lg:group-hover:justify-start cursor-pointer active:scale-95 text-red-400 bg-red-500/10 hover:bg-red-600 hover:text-white border border-red-500/30 shadow-lg group/exit"
+          title="خروج من التطبيق"
+        >
+          <div className="w-10 h-10 md:w-11 md:h-11 shrink-0 flex items-center justify-center relative z-10 mx-auto lg:group-hover:mx-0">
+            <LogOut className="w-5 h-5 md:w-6 md:h-6 shrink-0 group-hover/exit:scale-110 transition-transform" />
+          </div>
+          <span className="text-sm md:text-base font-bold opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap relative z-10 hidden lg:group-hover:inline-block">
+            خروج
+          </span>
+        </button>
       </div>
     </aside>
   );

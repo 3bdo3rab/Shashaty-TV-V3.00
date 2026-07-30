@@ -6,6 +6,10 @@ import { Channel, Watchlist } from '../types';
 export function getChannelSolidBg(channel: { title?: string; category?: string; type?: string; id?: string; modes?: string[] }): string {
   const text = ((channel.title || '') + ' ' + (channel.category || '') + ' ' + (channel.id || '')).toLowerCase();
 
+  // Radio / راديو
+  if (/راديو|إذاعة|إذاعه|radio|podcast|بودكاست/.test(text)) {
+    return 'bg-amber-900';
+  }
   // Kids / أطفالي
   if (/أطفال|اطفال|طفل|kids|baby|cartoon|كرتون|ديزني|براعم|طيور/.test(text)) {
     return 'bg-sky-700';
@@ -206,7 +210,18 @@ export function autoAssignWatchlistsToChannels(channels: Channel[], watchlists: 
           }
           break;
         case 'ch_quran':
-          if (wMode === 'quran' || /قرآن|قران|تلاوة|تلاوات|إسلامي|اسلامي|مسجد/i.test(text) || w.section === 'قرآن') {
+        case 'ch_radio_quran':
+          if (wMode === 'quran' || /قرآن|قران|تلاوة|تلاوات|إسلامي|اسلامي|مسجد|راديو/i.test(text) || w.section === 'قرآن') {
+            matchedIds.push(w.id);
+          }
+          break;
+        case 'ch_radio_nasheed':
+          if (wMode === 'music' || /أغان|اغان|أغني|اغني|موسيق|نشيد|أناشيد|اناشيد|صوتيات|راديو/i.test(text) || w.section === 'موسيقى') {
+            matchedIds.push(w.id);
+          }
+          break;
+        case 'ch_radio_podcasts':
+          if (/بودكاست|محاضرة|محاضرات|كتاب صوتي|كتب صوتية|ثقافة|مسموع|راديو/i.test(text)) {
             matchedIds.push(w.id);
           }
           break;

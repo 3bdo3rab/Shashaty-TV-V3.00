@@ -13,9 +13,9 @@ import { autoAssignWatchlistsToChannels, getChannelNowPlaying } from './utils/ch
 import { MODES } from './data';
 import { DEFAULT_CHANNELS } from './data/defaultChannels';
 import { store } from './utils/store';
-import { verifyPermission, getFilesFromDirectoryHandle } from './utils/fileSystem';
+import { verifyPermission, getFilesFromDirectoryHandle, isCrossOriginIframe } from './utils/fileSystem';
 import { extractVideoFrameThumbnail, generateVideoCardPoster } from './utils/coverHelper';
-import { FolderLock, FolderPlus, FolderTree, CheckCircle2, FolderOpen, Info, X, ShieldCheck, Play, Sparkles, Zap } from 'lucide-react';
+import { FolderLock, FolderPlus, FolderTree, CheckCircle2, FolderOpen, Info, X, ShieldCheck, Play, Sparkles, Zap, PictureInPicture } from 'lucide-react';
 import { useDialog } from './contexts/DialogContext';
 import { ProcessingRing } from './components/ProcessingRing';
 import { ScheduleNotifier } from './components/ScheduleNotifier';
@@ -32,6 +32,8 @@ export default function App() {
   const [isHydrating, setIsHydrating] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('home');
   const [previousView, setPreviousView] = useState<ViewState>('home');
+  const [isPipActive, setIsPipActive] = useState(false);
+  const [isFloating, setIsFloating] = useState(false);
   
   const [currentMode, setCurrentMode] = useState<Mode>('family');
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
@@ -246,7 +248,12 @@ export default function App() {
         mergedModes.quran = { ...mergedModes.quran, bgImage: MODES.quran.bgImage };
       }
       setCustomModes(mergedModes);
-      const loadedChannels = chs && chs.length > 0 ? chs : DEFAULT_CHANNELS;
+      let loadedChannels = chs && chs.length > 0 ? [...chs] : [...DEFAULT_CHANNELS];
+      DEFAULT_CHANNELS.forEach(defCh => {
+        if (!loadedChannels.some(c => c.id === defCh.id)) {
+          loadedChannels.push(defCh);
+        }
+      });
       const sanitizedChannels = loadedChannels.map(ch => ({
         ...ch,
         title: ch.title ? ch.title.replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '').trim() : ch.title
@@ -332,12 +339,7 @@ export default function App() {
 
   const handleGrantPermission = async () => {
     if (permissionRequired.length > 0) {
-      try {
-        if (window.self !== window.top) {
-          await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من منح الصلاحية (بسبب قيود المتصفح).');
-          return;
-        }
-      } catch (e) {
+      if (isCrossOriginIframe()) {
         await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من منح الصلاحية (بسبب قيود المتصفح).');
         return;
       }
@@ -370,27 +372,21 @@ export default function App() {
         if (e && (e.name === 'SecurityError' || (e.message && e.message.includes('cross origin')))) {
           await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من منح الصلاحية (بسبب قيود المتصفح).');
         } else {
-          console.error(e);
+          console.warn('Grant permission error:', e);
         }
       }
     }
   };
 
   const handleSetupInitialFolder = async () => {
+    if (isCrossOriginIframe()) {
+      await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
+      return;
+    }
+
     try {
       if (!('showDirectoryPicker' in window)) {
         await showAlert('متصفحك لا يدعم هذه الميزة.');
-        return;
-      }
-      
-      try {
-        if (window.self !== window.top) {
-          await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
-          return;
-        }
-      } catch (e) {
-        // Cross-origin access blocked check
-        await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
         return;
       }
 
@@ -403,8 +399,8 @@ export default function App() {
     } catch (e: any) {
       if (e && (e.name === 'SecurityError' || (e.message && e.message.includes('cross origin')))) {
         await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
-      } else {
-        console.error(e);
+      } else if (e && e.name !== 'AbortError' && !e.message?.includes('aborted') && !e.message?.includes('cancel')) {
+        console.warn('Setup initial folder cancelled or failed:', e);
       }
     }
   };
@@ -488,8 +484,8 @@ export default function App() {
   };
   
   const [activeFile, setActiveFile] = useState<any>(null);
-  const [activeTitle, setActiveTitle] = useState<string>('الحلقة 1');
-  const [activeWatchlistTitle, setActiveWatchlistTitle] = useState<string>('قائمة التشغيل');
+  const [activeTitle, setActiveTitle] = useState<string>('');
+  const [activeWatchlistTitle, setActiveWatchlistTitle] = useState<string>('');
 
   const [activeFiles, setActiveFiles] = useState<any[]>([]);
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -557,7 +553,10 @@ export default function App() {
     initialTime?: number,
     channelId?: string
   ) => {
-    setPreviousView(currentView);
+    if (currentView !== 'player') {
+      setPreviousView(currentView);
+    }
+    setIsFloating(false);
     setActiveFile(file || null);
     setActiveTitle(title || 'الحلقة 1');
     setActiveWatchlistTitle(watchlistTitle || 'قائمة التشغيل');
@@ -745,135 +744,228 @@ export default function App() {
           />
         )}
         
-        <main className="flex-1 h-full overflow-y-auto relative no-scrollbar">
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.div
-              key={currentView}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.08 }}
-              className="w-full min-h-full"
-            >
-              {currentView === 'home' && (
-                <HomeView 
-                  currentMode={currentMode} 
-                  setCurrentMode={setCurrentMode} 
-                  customModes={customModes}
-                  watchlists={watchlists}
-                  onPlay={handlePlay}
-                  onNavigate={setCurrentView}
-                />
-              )}
-              {currentView === 'channels' && (
-                <ChannelsView
-                  initialTab="channels"
-                  channels={channels}
-                  watchlists={watchlists}
-                  schedules={schedules}
-                  onUpdateChannels={setChannels}
-                  onUpdateSchedules={setSchedules}
-                  onPlay={handlePlay}
-                />
-              )}
-              {currentView === 'schedule' && (
-                <ChannelsView
-                  initialTab="schedule"
-                  channels={channels}
-                  watchlists={watchlists}
-                  schedules={schedules}
-                  onUpdateChannels={setChannels}
-                  onUpdateSchedules={setSchedules}
-                  onPlay={handlePlay}
-                />
-              )}
-              {currentView === 'library' && (
-                <LibraryView 
-                  onPlay={handlePlay} 
-                  watchlists={watchlists} 
-                  schedules={schedules}
-                  onUpdateSchedules={(newSchs) => {
-                    setSchedules(newSchs);
-                    store.setSchedules(newSchs);
-                  }}
-                  sessions={sessions}
-                  onAddSession={handleAddSession}
-                  onUpdateSession={handleUpdateSession}
-                  currentMode={currentMode}
-                  onSwitchMode={(newMode) => {
-                    setCurrentMode(newMode);
-                    store.setMode(newMode);
-                  }}
-                  customModes={customModes}
-                  onUpdateModeTitle={(mode, newTitle) => setCustomModes(prev => ({ ...prev, [mode]: { ...prev[mode], title: newTitle } }))}
-                  customCategories={customCategories[currentMode] || []}
-                  allCustomCategories={customCategories}
-                  onDeleteCategory={(cat) => handleDeleteCategory(currentMode, cat)}
-                  onRenameCategory={(oldCat, newCat) => handleRenameCategory(currentMode, oldCat, newCat)}
-                  onReorderCategories={(newCats) => handleReorderCategories(currentMode, newCats)}
-                  onAddWatchlist={handleAddWatchlist}
-                  onUpdateWatchlist={handleUpdateWatchlist}
-                  onDeleteWatchlist={handleDeleteWatchlist}
-                  onAddCategory={(cat) => handleAddCategory(currentMode, cat)}
-                />
-              )}
-              {currentView === 'create_watchlist' && (
-                <CreateWatchlistView 
-                  onAddWatchlist={handleAddWatchlist} 
-                  watchlists={watchlists}
-                  currentMode={currentMode} 
-                  customCategories={customCategories[currentMode] || []}
-                  onAddCategory={(cat) => handleAddCategory(currentMode, cat)}
-                  onDeleteCategory={(cat) => handleDeleteCategory(currentMode, cat)}
-                />
-              )}
-              {currentView === 'sessions' && (
-                <SmartSessionsView 
-                  sessions={sessions}
-                  onAddSession={handleAddSession}
-                  onUpdateSession={handleUpdateSession}
-                  onDeleteSession={handleDeleteSession}
-                  watchlists={watchlists}
-                  onPlay={handlePlay} 
-                />
-              )}
-              {currentView === 'player' && (
-                <PlayerView 
-                  key={`${activeChannelId || 'nochan'}-${activeWatchlistId || 'nolist'}-${activeTitle || 'notitle'}`}
-                  onExit={() => setCurrentView(previousView)} 
-                  file={activeFile} 
-                  title={activeTitle} 
-                  watchlistTitle={activeWatchlistTitle} 
-                  files={activeFiles} 
-                  initialIndex={activeIndex} 
-                  initialTime={activeInitialTime}
-                  currentMode={currentMode}
-                  onProgressUpdate={handleProgressUpdate}
-                  channels={channels}
-                  currentChannelId={activeChannelId || undefined}
-                  watchlists={watchlists}
-                  schedules={schedules}
-                  onPlayChannel={handlePlayChannelFromPlayer}
-                />
-              )}
-              {currentView === 'settings' && (
-                <SettingsView 
-                  currentMode={currentMode} 
-                  setCurrentMode={setCurrentMode} 
-                  customModes={customModes}
-                  onUpdateModes={setCustomModes}
-                  qaInspectionEnabled={qaInspectionEnabled}
-                  setQaInspectionEnabled={setQaInspectionEnabled}
-                  onStartInspection={handleStartInspection}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+        {currentView !== 'player' && (
+          <main className="flex-1 h-full overflow-y-auto relative no-scrollbar">
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={currentView}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.08 }}
+                className="w-full min-h-full"
+              >
+                {currentView === 'home' && (
+                  <HomeView 
+                    currentMode={currentMode} 
+                    setCurrentMode={setCurrentMode} 
+                    customModes={customModes}
+                    watchlists={watchlists}
+                    onPlay={handlePlay}
+                    onNavigate={setCurrentView}
+                  />
+                )}
+                {currentView === 'channels' && (
+                  <ChannelsView
+                    initialTab="channels"
+                    channels={channels}
+                    watchlists={watchlists}
+                    schedules={schedules}
+                    onUpdateChannels={setChannels}
+                    onUpdateSchedules={setSchedules}
+                    onPlay={handlePlay}
+                  />
+                )}
+                {currentView === 'schedule' && (
+                  <ChannelsView
+                    initialTab="schedule"
+                    channels={channels}
+                    watchlists={watchlists}
+                    schedules={schedules}
+                    onUpdateChannels={setChannels}
+                    onUpdateSchedules={setSchedules}
+                    onPlay={handlePlay}
+                  />
+                )}
+                {currentView === 'library' && (
+                  <LibraryView 
+                    onPlay={handlePlay} 
+                    watchlists={watchlists} 
+                    schedules={schedules}
+                    onUpdateSchedules={(newSchs) => {
+                      setSchedules(newSchs);
+                      store.setSchedules(newSchs);
+                    }}
+                    sessions={sessions}
+                    onAddSession={handleAddSession}
+                    onUpdateSession={handleUpdateSession}
+                    currentMode={currentMode}
+                    onSwitchMode={(newMode) => {
+                      setCurrentMode(newMode);
+                      store.setMode(newMode);
+                    }}
+                    customModes={customModes}
+                    onUpdateModeTitle={(mode, newTitle) => setCustomModes(prev => ({ ...prev, [mode]: { ...prev[mode], title: newTitle } }))}
+                    customCategories={customCategories[currentMode] || []}
+                    allCustomCategories={customCategories}
+                    onDeleteCategory={(cat) => handleDeleteCategory(currentMode, cat)}
+                    onRenameCategory={(oldCat, newCat) => handleRenameCategory(currentMode, oldCat, newCat)}
+                    onReorderCategories={(newCats) => handleReorderCategories(currentMode, newCats)}
+                    onAddWatchlist={handleAddWatchlist}
+                    onUpdateWatchlist={handleUpdateWatchlist}
+                    onDeleteWatchlist={handleDeleteWatchlist}
+                    onAddCategory={(cat) => handleAddCategory(currentMode, cat)}
+                  />
+                )}
+                {currentView === 'create_watchlist' && (
+                  <CreateWatchlistView 
+                    onAddWatchlist={handleAddWatchlist} 
+                    watchlists={watchlists}
+                    currentMode={currentMode} 
+                    customCategories={customCategories[currentMode] || []}
+                    onAddCategory={(cat) => handleAddCategory(currentMode, cat)}
+                    onDeleteCategory={(cat) => handleDeleteCategory(currentMode, cat)}
+                  />
+                )}
+                {currentView === 'sessions' && (
+                  <SmartSessionsView 
+                    sessions={sessions}
+                    onAddSession={handleAddSession}
+                    onUpdateSession={handleUpdateSession}
+                    onDeleteSession={handleDeleteSession}
+                    watchlists={watchlists}
+                    onPlay={handlePlay} 
+                  />
+                )}
+                {currentView === 'settings' && (
+                  <SettingsView 
+                    currentMode={currentMode} 
+                    setCurrentMode={setCurrentMode} 
+                    customModes={customModes}
+                    onUpdateModes={setCustomModes}
+                    qaInspectionEnabled={qaInspectionEnabled}
+                    setQaInspectionEnabled={setQaInspectionEnabled}
+                    onStartInspection={handleStartInspection}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        )}
       </div>
 
-      {/* FLOATING QA INSPECTION TRIGGER BUTTON (Only visible when QA mode is enabled) */}
-      {qaInspectionEnabled && currentView !== 'player' && (
+      {/* Standalone Player Layer (Full Screen or Floating Overlay) */}
+      {(currentView === 'player' || isFloating || isPipActive) && (
+        <PlayerView 
+          key={`${activeChannelId || 'nochan'}-${activeWatchlistId || 'nolist'}-${activeTitle || 'notitle'}`}
+          onExit={() => {
+            setIsFloating(true);
+            const target = (previousView && previousView !== 'player') ? previousView : 'home';
+            setCurrentView(target);
+          }} 
+          onRestoreView={() => {
+            setIsFloating(false);
+            if (currentView !== 'player') {
+              setPreviousView(currentView);
+            }
+            setCurrentView('player');
+          }}
+          isFloating={isFloating && currentView !== 'player'}
+          onToggleFloating={setIsFloating}
+          onStopPlayer={() => {
+            setIsFloating(false);
+            setIsPipActive(false);
+            setActiveFile(null);
+            setActiveTitle('');
+            setActiveChannelId(null);
+            setActiveFiles([]);
+            setActiveWatchlistId(null);
+            if (currentView === 'player') {
+              const target = (previousView && previousView !== 'player') ? previousView : 'home';
+              setCurrentView(target);
+            }
+          }}
+          onPipStateChange={setIsPipActive}
+          file={activeFile} 
+          title={activeTitle} 
+          watchlistTitle={activeWatchlistTitle} 
+          files={activeFiles} 
+          initialIndex={activeIndex} 
+          initialTime={activeInitialTime}
+          currentMode={currentMode}
+          onProgressUpdate={handleProgressUpdate}
+          channels={channels}
+          currentChannelId={activeChannelId || undefined}
+          watchlists={watchlists}
+          schedules={schedules}
+          onPlayChannel={handlePlayChannelFromPlayer}
+          customModes={customModes}
+        />
+      )}
+
+      {/* FLOATING RETURN LAUNCHER BUTTON (BOTTOM-LEFT) WHEN EXITED PLAYER */}
+      {currentView !== 'player' && !isFloating && (activeFile || activeTitle || activeChannelId || isPipActive) && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8, x: -30 }}
+          animate={{ opacity: 1, scale: 1, x: 0 }}
+          exit={{ opacity: 0, scale: 0.8, x: -30 }}
+          className="fixed bottom-6 left-6 z-50 flex items-center gap-3"
+        >
+          <button
+            onClick={() => {
+              if (currentView !== 'player') {
+                setPreviousView(currentView);
+              }
+              setCurrentView('player');
+            }}
+            className="group relative flex items-center gap-3 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 text-black font-black p-2.5 sm:px-4 sm:py-3 rounded-2xl shadow-[0_10px_30px_rgba(245,158,11,0.5)] border border-amber-300 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            title="انقر هنا لفتح المشغل والعودة للفيديو"
+          >
+            {/* Animated Pulse Indicator */}
+            <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-300 border border-black/40"></span>
+            </span>
+
+            <div className="w-9 h-9 rounded-xl bg-black flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform shadow-md">
+              <Play className="w-5 h-5 fill-amber-400 text-amber-400 translate-x-[1px]" />
+            </div>
+
+            <div className="flex flex-col text-right pr-1 hidden sm:flex">
+              <span className="text-xs font-black text-black leading-tight">العودة للمشغل 🎬</span>
+              <span className="text-[10px] text-black/80 font-bold">انقر لإعادة فتح النافذة</span>
+            </div>
+          </button>
+
+          {/* QA INSPECTION TRIGGER BUTTON NEXT TO IT IF QA MODE IS ON */}
+          {qaInspectionEnabled && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleStartInspection}
+                disabled={isInspecting}
+                className="bg-emerald-500 hover:bg-emerald-400 text-black font-black p-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs transition-all hover:scale-105 border border-emerald-300 cursor-pointer"
+                title="بدء الفحص الشامل وضمان الجودة (QA Mode)"
+              >
+                <ShieldCheck className="w-5 h-5" />
+              </button>
+
+              {qaReport && (
+                <button
+                  onClick={() => setQaReport(qaReport)}
+                  className="bg-zinc-900 border border-emerald-500/40 text-emerald-300 font-bold px-3 py-3 rounded-2xl shadow-xl text-xs hover:bg-zinc-800 transition-all cursor-pointer flex items-center gap-1.5"
+                  title="عرض تقرير الفحص الأخير"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  <span>التقرير ({qaReport.issues.length})</span>
+                </button>
+              )}
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* FLOATING QA INSPECTION TRIGGER BUTTON WHEN NO ACTIVE MEDIA */}
+      {qaInspectionEnabled && currentView !== 'player' && !(activeFile || activeTitle || activeChannelId || isPipActive) && (
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}

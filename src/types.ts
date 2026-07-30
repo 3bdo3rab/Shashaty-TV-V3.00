@@ -28,6 +28,7 @@ export interface Watchlist {
   targetMode?: Mode;
   lastWatchedIndex?: number;
   lastWatchedTime?: number;
+  isSingleFile?: boolean;
 }
 
 export interface Channel {
@@ -35,7 +36,7 @@ export interface Channel {
   title: string;
   description: string;
   icon: string;
-  type: 'movies' | 'series' | 'custom';
+  type: 'movies' | 'series' | 'radio' | 'custom';
   category: string; // e.g. "أفلام" | "مسلسلات"
   badge?: string;
   accentGradient: string; // Tailwind gradient classes

@@ -267,5 +267,49 @@ export const DEFAULT_CHANNELS: Channel[] = [
     playlistIds: [],
     modes: ['family'],
     autoSyncEnabled: true
+  },
+
+  // Radio Channels
+  {
+    id: 'ch_radio_quran',
+    title: 'إذاعة القرآن الكريم 📻🕌',
+    description: 'بث إذاعي حي 24/7 لأجمل التلاوات القرآنية والختمات الصوتية العطرة',
+    icon: 'Radio',
+    type: 'radio',
+    category: 'راديو',
+    badge: 'إذاعة القرآن',
+    accentGradient: 'from-emerald-900 via-teal-900 to-zinc-950',
+    playlistIds: [],
+    modes: ['quran'],
+    autoSyncEnabled: true,
+    autoSyncCategories: ['قرآن', 'قران', 'تلاوات', 'إسلاميات', 'راديو']
+  },
+  {
+    id: 'ch_radio_nasheed',
+    title: 'إذاعة الصوتيات والأناشيد 🎵📻',
+    description: 'بث إذاعي حي للأناشيد الإسلامية والمقاطع الصوتية الروحانية',
+    icon: 'Radio',
+    type: 'radio',
+    category: 'راديو',
+    badge: 'إذاعة الصوتيات',
+    accentGradient: 'from-fuchsia-900 via-purple-900 to-zinc-950',
+    playlistIds: [],
+    modes: ['music'],
+    autoSyncEnabled: true,
+    autoSyncCategories: ['موسيقى', 'صوتيات', 'أغاني', 'أناشيد', 'اناشيد']
+  },
+  {
+    id: 'ch_radio_podcasts',
+    title: 'إذاعة البودكاست والكتب الصوتية 🎙️📻',
+    description: 'محطة إذاعية للكتب الصوتية، الثقافة العامة، والبودكاست المسموع',
+    icon: 'Mic',
+    type: 'radio',
+    category: 'راديو',
+    badge: 'كتب وبودكاست',
+    accentGradient: 'from-amber-900 via-orange-950 to-zinc-950',
+    playlistIds: [],
+    modes: ['docs', 'family'],
+    autoSyncEnabled: true,
+    autoSyncCategories: ['بودكاست', 'محاضرات', 'كتب صوتية', 'ثقافة', 'راديو']
   }
 ];

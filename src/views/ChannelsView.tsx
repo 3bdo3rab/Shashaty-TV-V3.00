@@ -6,7 +6,7 @@ import { findScheduleConflict, parseTimeToMinutes, formatMinutesToTime } from '.
 import { 
   Tv, Play, Settings, Calendar, Sparkles, Plus, Check, Trash2, Clock, 
   Flame, Heart, Smile, Skull, Compass, Zap, Users, Baby, Music, Globe, 
-  Film, Star, Shield, Layers, Radio, RefreshCw, X, ChevronRight, Shuffle, Pencil, AlertTriangle, Clapperboard,
+  Film, Star, Shield, Layers, Radio, Mic, RefreshCw, X, ChevronRight, Shuffle, Pencil, AlertTriangle, Clapperboard,
   GripVertical, ArrowUp, ArrowDown, Repeat, Wand2, Copy, CopyCheck, Sliders, SlidersHorizontal, Download, Upload, BookOpen
 } from 'lucide-react';
 import { useDialog } from '../contexts/DialogContext';
@@ -147,7 +147,7 @@ interface ChannelsViewProps {
 
 const ICON_MAP: Record<string, any> = {
   Flame, Heart, Smile, Skull, Compass, Zap, Users, Baby, Music, Globe,
-  Tv, Film, Star, Shield, Sparkles, Clock, Layers
+  Tv, Film, Star, Shield, Sparkles, Clock, Layers, Radio, Mic
 };
 
 const DAYS_OF_WEEK = [
@@ -171,9 +171,20 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
 }) => {
   const { showAlert, showConfirm } = useDialog();
   const [activeTab, setActiveTab] = useState<'channels' | 'schedule'>(initialTab);
-  const [filterType, setFilterType] = useState<'all' | 'favorites' | 'movies' | 'series'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'favorites' | 'movies' | 'series' | 'radio'>('all');
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [showAllWatchlistsInModal, setShowAllWatchlistsInModal] = useState(false);
+
+  // Quick Link Modal State
+  const [isQuickLinkModalOpen, setIsQuickLinkModalOpen] = useState(false);
+  const [quickChannels, setQuickChannels] = useState<Channel[]>([]);
+  const [quickSearchQuery, setQuickSearchQuery] = useState('');
+
+  const handleOpenQuickLink = () => {
+    setQuickChannels(JSON.parse(JSON.stringify(channels)));
+    setQuickSearchQuery('');
+    setIsQuickLinkModalOpen(true);
+  };
   
   // Weekly Schedule State
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay());
@@ -329,6 +340,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
     if (filterType === 'favorites') return resolvedChannels.filter(c => c.isFavorite);
     if (filterType === 'movies') return resolvedChannels.filter(c => c.type === 'movies');
     if (filterType === 'series') return resolvedChannels.filter(c => c.type === 'series');
+    if (filterType === 'radio') return resolvedChannels.filter(c => c.type === 'radio');
     return resolvedChannels;
   }, [resolvedChannels, filterType]);
 
@@ -1004,20 +1016,29 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                   <Tv className="w-6 h-6 text-amber-600" />
                 </div>
                 <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900 drop-shadow-sm">
-                  القنوات التلفزيونية الشخصية
+                  القنوات التلفزيونية ومحطات الراديو
                 </h1>
                 <span className="px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-800 border border-amber-400/40 text-xs font-black flex items-center gap-1.5 shadow-sm">
                   <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>وضع مستقل مستمر 📺</span>
+                  <span>بث مدمج مستمر 📺📻</span>
                 </span>
               </div>
               <p className="text-sm sm:text-lg text-slate-600 font-medium">
-                شاهد قنواتك الخاصة المستمدة بالكامل من مكتبتك المحلية بشكل مستقل وبدون قيود
+                شاهد واستمع لقنواتك الفضائية ومحطات الراديو الصوتية المستمدة بالكامل من مكتبتك المحلية
               </p>
             </div>
 
-            {/* Surprise Me, Sync & Create Channel Controls */}
+            {/* Surprise Me, Sync, Quick Link & Create Channel Controls */}
             <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={handleOpenQuickLink}
+                className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black shadow-lg shadow-amber-400/20 hover:scale-105 active:scale-95 transition-all text-sm sm:text-base border border-amber-300 cursor-pointer shrink-0"
+                title="فتح نافذة الربط السريع لربط القنوات والأوضاع دفعة واحدة"
+              >
+                <Zap className="w-5 h-5 fill-current text-slate-950 stroke-[2.5]" />
+                <span>الربط السريع ⚡</span>
+              </button>
+
               <button
                 onClick={handleRunSyncChannels}
                 className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 border border-amber-400/40 font-extrabold shadow-sm hover:scale-105 active:scale-95 transition-all text-sm sm:text-base cursor-pointer shrink-0"
@@ -1225,6 +1246,14 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-xl sm:text-2xl font-black text-slate-900">دليل القنوات المتاحة</h2>
               <button
+                onClick={handleOpenQuickLink}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black border border-amber-300 text-xs transition-all cursor-pointer shadow-sm hover:scale-105"
+                title="فتح نافذة الربط السريع للقنوات بالأنماط والأوضاع"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current stroke-[2.5]" />
+                <span>الربط السريع ⚡</span>
+              </button>
+              <button
                 onClick={handleRunSyncChannels}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-900 font-extrabold border border-amber-300 text-xs transition-colors cursor-pointer"
                 title="مزامنة القنوات مع قوائم المكتبة"
@@ -1279,6 +1308,14 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                 }`}
               >
                 📺 قنوات المسلسلات
+              </button>
+              <button
+                onClick={() => setFilterType('radio')}
+                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+                  filterType === 'radio' ? 'bg-slate-900 text-amber-300 shadow-md' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                📻 محطات الراديو
               </button>
             </div>
           </div>
@@ -1389,7 +1426,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                         <IconComp className="w-7 h-7 sm:w-8 sm:h-8 text-slate-950" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-black text-white text-2xl sm:text-3xl drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] truncate leading-tight tracking-tight">
+                        <h3 className="font-black text-white text-base sm:text-lg drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] truncate leading-tight tracking-tight">
                           {channel.title}
                         </h3>
                         <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -1505,18 +1542,14 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                   <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white drop-shadow-xl">
                     جدولة البث الأسبوعي
                   </h1>
-                  <span className="px-3 py-1.5 rounded-xl bg-purple-400/20 text-purple-300 border border-purple-400/40 text-xs font-black flex items-center gap-1.5 shadow-sm">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>جدولة ذكية متكاملة 📅</span>
-                  </span>
                 </div>
                 <p className="text-xs sm:text-base text-white/70 font-medium">
                   نظام جدولة أوتوماتيكي مستوحى من كافة مكتباتك، مع إمكانية تعديل وتخصيص كل يوم منفرداً
                 </p>
               </div>
 
-              {/* Innovative Action Toolbar */}
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 p-1.5 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-md">
+              {/* Innovative Sticky Action Toolbar */}
+              <div className="sticky top-2 z-30 flex flex-wrap items-center gap-2.5 sm:gap-3 p-2 bg-zinc-950/90 rounded-2xl border border-white/20 backdrop-blur-xl shadow-2xl">
                 {/* 1. Smart Schedule Button (جدولة ذكية) */}
                 <button
                   onClick={() => {
@@ -1835,7 +1868,7 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                 {/* Editable Fields Section */}
                 <div className="space-y-3 pb-3 border-b border-white/10">
                   <div>
-                    <label className="block text-xs font-bold text-amber-300 mb-1">اسم القناة</label>
+                    <label className="block text-xs font-bold text-amber-300 mb-1">اسم القناة وأيقونة الإيموجي</label>
                     <input
                       type="text"
                       value={editingChannel.title}
@@ -1843,6 +1876,29 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                       placeholder="اسم القناة"
                       className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/15 text-white placeholder-white/40 focus:outline-none focus:border-amber-400 text-sm font-bold"
                     />
+                    {/* Quick Emoji Preset Picker */}
+                    <div className="mt-2 space-y-1">
+                      <span className="text-[11px] font-bold text-white/60">اختر إيموجي سريع للقناة:</span>
+                      <div className="flex flex-wrap gap-1 bg-black/40 p-2 rounded-xl border border-white/10 max-h-24 overflow-y-auto no-scrollbar">
+                        {['📺', '🍿', '🎬', '🕌', '🎵', '👶', '🌍', '💫', '⚡', '🎭', '📡', '🏆', '⚽', '🎮', '📜', '🌟', '👑', '🔮', '🔥', '🚀', '🎨', '🏖️', '🎧', '📽️', '💡'].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              const currentTitle = editingChannel.title || '';
+                              const hasEmojiPrefix = /^[\p{Emoji}\s]+/u.test(currentTitle.trim());
+                              const cleanTitle = currentTitle.replace(/^[\p{Emoji}\s]+/u, '').trim();
+                              const newTitle = `${emoji} ${cleanTitle || 'قناة جديدة'}`;
+                              handleUpdateEditingChannelField('title', newTitle);
+                            }}
+                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-amber-400 hover:scale-110 text-base flex items-center justify-center transition-all cursor-pointer border border-white/10 hover:border-amber-400"
+                            title={`إضافة الإيموجي ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   <div>
@@ -1865,6 +1921,49 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                       placeholder="وصف محتوى القناة"
                       className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-amber-400 text-xs"
                     />
+                  </div>
+
+                  {/* Channel Medium Type */}
+                  <div>
+                    <label className="block text-xs font-bold text-amber-300 mb-1">تصنيف البث (نوع المحتوى)</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateEditingChannelField('type', 'movies')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
+                          editingChannel.type === 'movies'
+                            ? 'bg-amber-400 text-black border-amber-300 shadow-md font-black'
+                            : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        <span>🎬 أفلام</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateEditingChannelField('type', 'series')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
+                          editingChannel.type === 'series'
+                            ? 'bg-amber-400 text-black border-amber-300 shadow-md font-black'
+                            : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <Tv className="w-3.5 h-3.5" />
+                        <span>📺 مسلسلات</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateEditingChannelField('type', 'radio')}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
+                          editingChannel.type === 'radio'
+                            ? 'bg-amber-400 text-black border-amber-300 shadow-md font-black'
+                            : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <Radio className="w-3.5 h-3.5" />
+                        <span>📻 راديو بصوتي</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Multiple Modes Selection */}
@@ -2058,9 +2157,14 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                 {/* Watchlists Selection Section */}
                 {(() => {
                   const selectedModes = editingChannel.modes || [];
-                  const displayWatchlists = showAllWatchlistsInModal || selectedModes.length === 0
+                  const displayWatchlists = showAllWatchlistsInModal
                     ? watchlists
-                    : watchlists.filter(wl => selectedModes.includes(wl.targetMode as any) || (editingChannel.playlistIds || []).includes(wl.id));
+                    : selectedModes.length > 0
+                    ? watchlists.filter(wl => {
+                        const wlMode = wl.targetMode || wl.section;
+                        return selectedModes.some(m => wlMode === m || wl.targetMode === m || wl.section === m);
+                      })
+                    : watchlists;
 
                   return (
                     <div className="space-y-2.5">
@@ -2073,18 +2177,48 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                             {showAllWatchlistsInModal
                               ? 'عرض جميع قوائم المكتبة'
                               : selectedModes.length === 0
-                              ? 'عرض جميع القوائم في المكتبة'
-                              : `مصفاة حسب الأوضاع المحددة (${selectedModes.length})`}
+                              ? 'يرجى تحديد وضع للقناة من الأعلى لخصخصة القوائم المتاحة'
+                              : `مصفاة حن المحتوى التابع للأوضاع المحددة فقط (${selectedModes.join(', ')})`}
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => setShowAllWatchlistsInModal(!showAllWatchlistsInModal)}
-                          className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold transition-colors cursor-pointer border border-white/15"
-                        >
-                          {showAllWatchlistsInModal ? 'تصفية حسب وضع القناة' : 'عرض جميع القوائم'}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allIds = Array.from(new Set([
+                                ...(editingChannel.playlistIds || []),
+                                ...displayWatchlists.map(w => w.id)
+                              ]));
+                              handleUpdateEditingChannelField('playlistIds', allIds);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-black text-[11px] font-extrabold transition-all cursor-pointer border border-amber-400/40"
+                            title="تحديد جميع القوائم المعروضة"
+                          >
+                            تحديد الكل 💥
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const displaySet = new Set(displayWatchlists.map(w => w.id));
+                              const remaining = (editingChannel.playlistIds || []).filter(id => !displaySet.has(id));
+                              handleUpdateEditingChannelField('playlistIds', remaining);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white text-[11px] font-extrabold transition-all cursor-pointer border border-red-500/40"
+                            title="إلغاء تحديد القوائم المعروضة"
+                          >
+                            إلغاء الكل ❌
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setShowAllWatchlistsInModal(!showAllWatchlistsInModal)}
+                            className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold transition-colors cursor-pointer border border-white/15"
+                          >
+                            {showAllWatchlistsInModal ? 'تصفية حسب وضع القناة' : 'عرض جميع القوائم'}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Watchlists List */}
@@ -2711,6 +2845,218 @@ export const ChannelsView: React.FC<ChannelsViewProps> = ({
                 >
                   <Wand2 className="w-4 h-4 text-amber-300" />
                   <span>توليد وإنشاء الجدول الآن ⚡</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK LINK MODAL (الربط السريع للقنوات بالأنماط والأوضاع) */}
+      <AnimatePresence>
+        {isQuickLinkModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md dir-rtl text-right">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-4xl p-6 sm:p-8 rounded-3xl bg-zinc-950 border border-amber-400/40 shadow-[0_0_60px_rgba(251,191,36,0.25)] space-y-6 text-white overflow-hidden max-h-[92vh] flex flex-col"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-400 flex items-center justify-center shadow-lg shadow-amber-400/30 text-slate-950 shrink-0">
+                    <Zap className="w-7 h-7 fill-current stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2 flex-wrap">
+                      <span>الربط السريع للقنوات والراديو بالأنماط</span>
+                      <span className="px-2.5 py-0.5 text-xs rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30">سريع ودفعة واحدة ⚡</span>
+                    </h3>
+                    <p className="text-xs text-white/60 font-medium mt-0.5">
+                      تحديد وربط أنماط البث المباشر (أطفال، مسلسلات، سينما، وثائقيات، قرآن، موسيقى) لجميع القنوات والمحطات في نافذة واحدة
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsQuickLinkModalOpen(false)}
+                  className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer border border-white/10"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Toolbar inside Modal */}
+              <div className="flex items-center justify-between flex-wrap gap-3 bg-white/5 p-3.5 rounded-2xl border border-white/10 shrink-0">
+                <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                  <input
+                    type="text"
+                    value={quickSearchQuery}
+                    onChange={(e) => setQuickSearchQuery(e.target.value)}
+                    placeholder="🔍 ابحث عن قناة أو محطة راديو بالاسم..."
+                    className="w-full px-3.5 py-2 rounded-xl bg-black/60 border border-white/15 text-white placeholder-white/40 text-xs font-bold focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      const synced = autoAssignWatchlistsToChannels(quickChannels, watchlists);
+                      setQuickChannels(synced);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-400/20 hover:bg-amber-400 text-amber-300 hover:text-slate-950 font-extrabold text-xs transition-all border border-amber-400/40 cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    title="ربط القوائم والمسلسلات في المكتبة أوتوماتيكياً مع القنوات حسب أنماطها"
+                  >
+                    <Wand2 className="w-4 h-4" />
+                    <span>مزامنة تلقائية للكل 🪄</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setQuickChannels(prev => prev.map(ch => ({
+                        ...ch,
+                        autoSyncEnabled: true
+                      })));
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500 text-purple-300 hover:text-white font-extrabold text-xs transition-all border border-purple-500/40 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span>تفعيل المزامنة للجميع ⚡</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Channels List Container */}
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 no-scrollbar">
+                {quickChannels
+                  .filter(ch => !quickSearchQuery || ch.title.toLowerCase().includes(quickSearchQuery.toLowerCase()))
+                  .map((ch) => {
+                    const currentModes = ch.modes || [];
+                    const linkedCount = ch.playlistIds?.length || 0;
+
+                    return (
+                      <div
+                        key={ch.id}
+                        className="p-4 rounded-2xl bg-zinc-900/90 border border-white/10 hover:border-amber-400/40 transition-all space-y-3"
+                      >
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${ch.accentGradient || 'from-amber-500 to-rose-600'} flex items-center justify-center text-white font-black text-sm shadow-md shrink-0`}>
+                              {ch.id.includes('radio') || ch.type === 'radio' ? <Radio className="w-5 h-5" /> : <Tv className="w-5 h-5" />}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-extrabold text-sm sm:text-base text-white">{ch.title}</h4>
+                                {ch.badge && (
+                                  <span className="px-2 py-0.5 text-[10px] font-black rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                                    {ch.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-white/50 mt-0.5">
+                                {linkedCount > 0 ? (
+                                  <span className="text-amber-300 font-bold">{linkedCount} قائمة تشغيل مرتبطة</span>
+                                ) : (
+                                  <span className="text-white/40">لا توجد قوائم تشغيل مرتبطة</span>
+                                )}
+                                {' • '}
+                                <span>المزامنة التلقائية: {ch.autoSyncEnabled !== false ? 'مفعلة ⚡' : 'يدوية 🎯'}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const syncedCh = autoAssignWatchlistsToChannels([ch], watchlists)[0];
+                              setQuickChannels(prev => prev.map(item => item.id === ch.id ? syncedCh : item));
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-amber-300 font-bold text-xs transition-colors cursor-pointer border border-white/10 flex items-center gap-1.5"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>مزامنة هذه القناة</span>
+                          </button>
+                        </div>
+
+                        {/* Mode Selector Buttons */}
+                        <div className="space-y-1.5 pt-2 border-t border-white/5">
+                          <span className="text-[11px] font-bold text-amber-200 block">حدد الأنماط والأوضاع التشغيلية المرتبطة بهذه القناة:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { id: 'kids', label: 'أطفال 👶' },
+                              { id: 'family', label: 'مسلسلات 👨‍👩‍👧‍👦' },
+                              { id: 'cinema', label: 'سينما 🎬' },
+                              { id: 'docs', label: 'وثائقيات 🌍' },
+                              { id: 'quran', label: 'قرآن 📖' },
+                              { id: 'music', label: 'موسيقى 🎵' },
+                            ].map(m => {
+                              const isSelected = currentModes.includes(m.id as any);
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const nextModes = isSelected
+                                      ? currentModes.filter(x => x !== m.id)
+                                      : [...currentModes, m.id as any];
+
+                                    // Auto sync matching watchlists for nextModes
+                                    const matchingWlIds = watchlists
+                                      .filter(w => {
+                                        const wMode = w.targetMode || w.section;
+                                        return nextModes.some(modeKey => wMode === modeKey || w.targetMode === modeKey || w.section === modeKey);
+                                      })
+                                      .map(w => w.id);
+
+                                    setQuickChannels(prev => prev.map(item => {
+                                      if (item.id !== ch.id) return item;
+                                      return {
+                                        ...item,
+                                        modes: nextModes,
+                                        playlistIds: Array.from(new Set([...(item.playlistIds || []), ...matchingWlIds]))
+                                      };
+                                    }));
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center gap-1.5 ${
+                                    isSelected
+                                      ? 'bg-amber-400 text-slate-950 border-amber-300 font-extrabold shadow-md'
+                                      : 'bg-white/5 text-white/70 border-white/10 hover:bg-white/15'
+                                  }`}
+                                >
+                                  <span>{m.label}</span>
+                                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-4 border-t border-white/10 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickLinkModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors text-sm cursor-pointer"
+                >
+                  إلغاء
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const finalChannels = autoAssignWatchlistsToChannels(quickChannels, watchlists);
+                    onUpdateChannels(finalChannels);
+                    setIsQuickLinkModalOpen(false);
+                    showAlert('تم إعتماد وحفظ الربط السريع لجميع القنوات والأوضاع بنجاح! ⚡', 'نجاح الربط السريع');
+                  }}
+                  className="px-7 py-3 rounded-2xl bg-amber-400 text-slate-950 font-black hover:bg-amber-300 transition-all text-sm cursor-pointer shadow-[0_8px_20px_rgba(250,204,21,0.35)] flex items-center gap-2 hover:scale-105 active:scale-95"
+                >
+                  <Check className="w-5 h-5 stroke-[3]" />
+                  <span>حفظ وإعتماد الربط السريع ⚡</span>
                 </button>
               </div>
             </motion.div>

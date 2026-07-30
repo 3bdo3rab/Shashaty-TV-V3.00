@@ -3,9 +3,10 @@ import { motion } from 'motion/react';
 import { FolderOpen, UploadCloud, FolderPlus, CheckCircle2, Layers, Plus, Trash2, X, Tv, Baby, Film, Globe, BookOpen, Music, Sparkles, ChevronDown, ChevronLeft, ChevronRight, Folder, FileVideo, FolderTree, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 import { Watchlist, Mode } from '../types';
 import { MODE_SECTIONS } from '../data';
-import { getEpisodeInspiredCover, extractVideoFrameThumbnail } from '../utils/coverHelper';
+import { getEpisodeInspiredCover, extractVideoFrameThumbnail, generateVideoCardPoster } from '../utils/coverHelper';
 
 import { naturalCompare, sortSmartMediaFiles } from '../utils/sorter';
+import { isCrossOriginIframe } from '../utils/fileSystem';
 import { store } from '../utils/store';
 import { useDialog } from '../contexts/DialogContext';
 import { ProcessingRing } from '../components/ProcessingRing';
@@ -536,20 +537,24 @@ export const buildWatchlistsFromFiles = (
 
     if (rootDirectFiles.length > 0) {
       const sortedRoot = sortSmartMediaFiles(rootDirectFiles);
-      watchlists.unshift({
-        id: (Date.now() + 9999).toString(),
-        title: rootFolderName,
-        files: sortedRoot,
-        targetMode,
-        section,
-        coverImage: getEpisodeInspiredCover(rootFolderName, section, sortedRoot),
-        seriesCount: 1,
-        episodesCount: sortedRoot.length,
-        folderName: rootFolderName,
-        folderPath: `/Media/${rootFolderName}`,
-        lastWatched: '-',
-        progress: 0,
-        timeRemaining: `${sortedRoot.length * 45} دقيقة`,
+      sortedRoot.forEach((rf, idx) => {
+        const titleName = rf.name.replace(/\.[^/.]+$/, "");
+        watchlists.unshift({
+          id: (Date.now() + 9000 + idx + Math.random() * 100).toString(),
+          title: titleName,
+          files: [rf],
+          targetMode,
+          section,
+          coverImage: generateVideoCardPoster(titleName, rf.name),
+          seriesCount: 1,
+          episodesCount: 1,
+          isSingleFile: true,
+          folderName: rootFolderName,
+          folderPath: `/Media/${rootFolderName}`,
+          lastWatched: '-',
+          progress: 0,
+          timeRemaining: `فيديو مفرد 🎬`,
+        });
       });
     }
 
@@ -584,9 +589,10 @@ export const buildWatchlistsFromFiles = (
     const coverFile = looseFiles[0] || sortedAllFiles[0];
     const initialCover = coverFile ? getEpisodeInspiredCover(rootFolderName, section, sortedAllFiles) : '';
 
+    const isSingle = sortedAllFiles.length === 1 && (!finalSeasons || finalSeasons.length === 0);
     return [{
       id: (Date.now()).toString(),
-      title: rootFolderName,
+      title: isSingle ? sortedAllFiles[0].name.replace(/\.[^/.]+$/, "") : rootFolderName,
       files: sortedAllFiles,
       seasons: finalSeasons,
       targetMode,
@@ -594,11 +600,12 @@ export const buildWatchlistsFromFiles = (
       coverImage: initialCover,
       seriesCount: finalSeasons ? finalSeasons.length : 1,
       episodesCount: sortedAllFiles.length,
+      isSingleFile: isSingle,
       folderName: rootFolderName,
       folderPath: `/Media/${rootFolderName}`,
       lastWatched: '-',
       progress: 0,
-      timeRemaining: `${sortedAllFiles.length * 45} دقيقة`,
+      timeRemaining: isSingle ? 'فيديو مفرد 🎬' : `${sortedAllFiles.length * 45} دقيقة`,
     }];
   }
 };
@@ -769,15 +776,16 @@ export const CreateWatchlistView: React.FC<CreateWatchlistViewProps> = ({
   };
 
   const handleAddFolderClick = async () => {
+    if (isCrossOriginIframe()) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+      }
+      return;
+    }
+
     if ('showDirectoryPicker' in window) {
       try {
-        if (window.self !== window.top) {
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-            fileInputRef.current.click();
-          }
-          return;
-        }
         const dirHandle = await (window as any).showDirectoryPicker();
         if (dirHandle) {
           setImportedHandle(dirHandle);
@@ -821,7 +829,14 @@ export const CreateWatchlistView: React.FC<CreateWatchlistViewProps> = ({
           return;
         }
       } catch (e: any) {
-        if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted')) {
+        if (e && (e.name === 'SecurityError' || e.message?.includes('cross origin') || e.name === 'NotAllowedError')) {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
+          }
+          return;
+        }
+        if (e && e.name !== 'AbortError' && !e.message?.includes('user aborted') && !e.message?.includes('cancel')) {
           console.warn('showDirectoryPicker unavailable or cancelled:', e);
         }
       }
@@ -935,14 +950,17 @@ export const CreateWatchlistView: React.FC<CreateWatchlistViewProps> = ({
         title: parsedWatchlists.length === 1 && listName.trim() ? listName.trim() : w.title
       }));
 
-      // Generate thumbnails for watchlists if possible
+      // Extract real video frame thumbnail for each watchlist
       for (const w of finalWatchlists) {
-        const firstFile = w.files && w.files[0];
-        if (firstFile && firstFile instanceof File) {
+        const allFiles = [...(w.files || []), ...(w.seasons?.flatMap((s: any) => s.files || []) || [])];
+        const firstFile = allFiles.find(f => f instanceof File || (f && ((f as any).rawFile instanceof File || (f as any).blobUrl)));
+        if (firstFile) {
           try {
             const thumb = await extractVideoFrameThumbnail(firstFile);
             if (thumb) w.coverImage = thumb;
-          } catch {}
+          } catch (e) {
+            console.warn('Video frame thumbnail extraction error:', e);
+          }
         }
       }
 

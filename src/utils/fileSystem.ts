@@ -2,6 +2,14 @@ import { Watchlist, Mode } from '../types';
 import { generateVideoCardPoster, extractVideoFrameThumbnail } from './coverHelper';
 import { sortSmartMediaFiles, naturalCompare } from './sorter';
 
+export function isCrossOriginIframe(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+
 function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();

@@ -6,7 +6,7 @@ import { isTauri, minimizeWindow, toggleMaximizeWindow, closeWindow, setFullscre
 import { MODES, MODE_BACKGROUND_PRESETS } from '../data';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { store } from '../utils/store';
-import { createWatchlistsFromDirectoryHandle } from '../utils/fileSystem';
+import { createWatchlistsFromDirectoryHandle, isCrossOriginIframe } from '../utils/fileSystem';
 import { useDialog } from '../contexts/DialogContext';
 import { ProcessingRing } from '../components/ProcessingRing';
 
@@ -438,19 +438,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleSetParentDirectory = async () => {
+    if (isCrossOriginIframe()) {
+      await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
+      return;
+    }
+
     try {
       if (!('showDirectoryPicker' in window)) {
         await showAlert('متصفحك لا يدعم هذه الخاصية. يرجى استخدام متصفح حديث مثل Chrome أو Edge.');
-        return;
-      }
-      
-      try {
-        if (window.self !== window.top) {
-          await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
-          return;
-        }
-      } catch (e) {
-        await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
         return;
       }
 
@@ -471,7 +466,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     } catch (e: any) {
       if (e && (e.name === 'SecurityError' || (e.message && e.message.includes('cross origin')))) {
         await showAlert('يرجى فتح التطبيق في علامة تبويب جديدة لتتمكن من تحديد المجلد (بسبب قيود المتصفح).');
-      } else {
+      } else if (e && e.name !== 'AbortError' && !e.message?.includes('aborted') && !e.message?.includes('cancel')) {
         console.warn('User cancelled directory picker', e);
       }
     }
@@ -1321,50 +1316,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
 
                   <div className="space-y-6">
-                    <div className="glass-card p-6 rounded-2xl border border-white/10 bg-black/40">
-                      <div className="flex items-center justify-between gap-4 mb-4">
-                        <div className="flex items-center gap-3">
-                          <span className={`w-3.5 h-3.5 rounded-full ${isTauri() ? 'bg-green-400 animate-pulse' : 'bg-amber-400'}`} />
-                          <h3 className="font-bold text-lg">حالة محرك التشغيل</h3>
-                        </div>
-                        <span className="text-xs px-3 py-1 rounded-full bg-white/10 text-white font-mono border border-white/20">
-                          {isTauri() ? 'Tauri Runtime Native' : 'Desktop System Ready'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-white/70 leading-relaxed">
-                        تم تحويل واجهة التطبيق بالكامل لدعم معايير تطبيقات سطح المكتب Desktop App Framework. يمكنك التحكم بنوافذ التطبيق، السحب والإفلات المباشر، واختصارات الشاشة الكاملة.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <button
-                        onClick={minimizeWindow}
-                        className="glass-card p-5 rounded-2xl border border-white/10 hover:border-amber-400/50 hover:bg-white/10 transition-all text-center flex flex-col items-center gap-2 cursor-pointer group"
-                      >
-                        <Minimize2 className="w-7 h-7 text-amber-300 group-hover:scale-110 transition-transform" />
-                        <span className="font-bold text-sm">تصغير النافذة</span>
-                        <span className="text-[11px] text-white/50">Minimize Window</span>
-                      </button>
-
-                      <button
-                        onClick={toggleMaximizeWindow}
-                        className="glass-card p-5 rounded-2xl border border-white/10 hover:border-amber-400/50 hover:bg-white/10 transition-all text-center flex flex-col items-center gap-2 cursor-pointer group"
-                      >
-                        <Maximize2 className="w-7 h-7 text-indigo-300 group-hover:scale-110 transition-transform" />
-                        <span className="font-bold text-sm">تكبير / ملء الشاشة</span>
-                        <span className="text-[11px] text-white/50">Maximize / Fullscreen</span>
-                      </button>
-
-                      <button
-                        onClick={closeWindow}
-                        className="glass-card p-5 rounded-2xl border border-red-500/20 hover:border-red-500 hover:bg-red-500/10 transition-all text-center flex flex-col items-center gap-2 cursor-pointer group"
-                      >
-                        <X className="w-7 h-7 text-red-400 group-hover:scale-110 transition-transform" />
-                        <span className="font-bold text-sm text-red-300">إغلاق التطبيق</span>
-                        <span className="text-[11px] text-red-400/60">Close App</span>
-                      </button>
-                    </div>
-
                     <div className="glass-card p-5 rounded-2xl border border-white/10 bg-white/5 space-y-4">
                       <h4 className="font-bold text-sm text-amber-300">⚙️ خيارات سطح المكتب والنظام:</h4>
                       
@@ -1432,16 +1383,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </button>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="glass-card p-5 rounded-2xl border border-white/10 bg-white/5 space-y-3">
-                      <h4 className="font-bold text-sm text-amber-300">💡 مميزات نظام Tauri في التطبيق:</h4>
-                      <ul className="text-xs text-white/80 space-y-2 list-disc list-inside leading-relaxed">
-                        <li>شريط عنوان تفاعلي مدمج أعلى الشاشة بحجم مخصص ويدعم السحب (Window Drag Region).</li>
-                        <li>معالجة سريعة لقراءة ملفات الميديا والمجلدات بدون استهلاك ذاكرة مرتفع.</li>
-                        <li>دعم اختصارات لوحة المفاتيح: F11 لملء الشاشة، وEsc للخروج من العرض التفاعلي.</li>
-                        <li>حماية أزرار وقوائم التشغيل من الانقصاص أو الانقطاع عند التمدد والتكبير.</li>
-                      </ul>
                     </div>
                   </div>
                 </div>

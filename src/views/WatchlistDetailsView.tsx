@@ -4,7 +4,7 @@ import { Play, X, RotateCcw, Clock, Film, Layers, Trash2, Pencil, Save, FolderPl
 import { Watchlist, WeeklyScheduleEntry, Mode } from '../types';
 import { naturalCompare, sortSmartMediaFiles } from '../utils/sorter';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { getEpisodeInspiredCover, getWatchlistCover } from '../utils/coverHelper';
+import { getEpisodeInspiredCover, getWatchlistCover, extractVideoFrameThumbnail } from '../utils/coverHelper';
 import { useDialog } from '../contexts/DialogContext';
 import { findScheduleConflict, parseTimeToMinutes, formatMinutesToTime } from '../utils/scheduleUtils';
 
@@ -212,9 +212,22 @@ export default function WatchlistDetailsView({
     const updatedFolderName = newFolderName !== null ? newFolderName : (watchlist.folderName || watchlist.title);
     
     // Auto cover if new files selected
-    const updatedCover = (newFiles !== null && updatedFiles.length > 0)
-      ? getEpisodeInspiredCover(updatedFiles[0]?.name || editTitle, updatedFiles[0])
-      : watchlist.coverImage;
+    let updatedCover = watchlist.coverImage;
+    if (newFiles !== null && updatedFiles.length > 0) {
+      const allFiles = [...updatedFiles, ...updatedSeasons.flatMap((s: any) => s.files || [])];
+      const firstFile = allFiles.find(f => f instanceof File || (f && ((f as any).rawFile instanceof File || (f as any).blobUrl)));
+      if (firstFile) {
+        try {
+          const thumb = await extractVideoFrameThumbnail(firstFile);
+          if (thumb) updatedCover = thumb;
+        } catch (e) {
+          console.warn('Video frame thumbnail extraction error:', e);
+        }
+      }
+      if (!updatedCover) {
+        updatedCover = getWatchlistCover({ title: editTitle, section: editSection, files: updatedFiles, seasons: updatedSeasons });
+      }
+    }
 
     const totalEpCount = updatedFiles.length > 0 ? updatedFiles.length : watchlist.episodesCount;
     const seriesCount = updatedSeasons.length > 0 ? updatedSeasons.length : (watchlist.seriesCount || 1);
